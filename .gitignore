@@ -152,4 +152,5 @@ _deps
 
 build
 includes/*
+debug
 !.gitkeep

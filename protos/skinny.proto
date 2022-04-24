@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package skinny;
+
+message OpenReq {
+  int64 session_id = 1;
+  string path = 2;
+}
+
+message GetContentReq {
+  int64 session_id = 1;
+  int32 fh = 2;
+}
+ 
+message SetContentReq {
+    int64 session_id = 1;
+    int32 fh = 2;
+    string content = 3;
+}
+
+message Handle {
+  int32 fh = 1;
+}
+
+message SessionId {
+  int64 session_id = 1;
+}
+
+message Content {
+  string content = 1;
+}
+
+message Empty {
+
+}
+
+service Skinny {
+  rpc StartSession (Empty) returns (SessionId) {}
+  rpc Open (OpenReq) returns (Handle) {}
+  rpc GetContent(GetContentReq) returns (Content) {}
+  rpc SetContent(SetContentReq) returns (Empty) {}
+}
