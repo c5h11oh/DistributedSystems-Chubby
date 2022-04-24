@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package hafs;
+
+message ClientRequest {
+	string str = 1;
+}
+
+message ServerResponse {
+  string str = 1;
+}
+
+service gRPCService {
+  rpc hi (ClientRequest) returns (ServerResponse) {}
+}
