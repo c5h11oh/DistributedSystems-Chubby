@@ -18,7 +18,10 @@ class Session {
     return v.size() - 1;
   }
 
-  void enqueue_event(int fh) { event_queue.push(fh); }
+  void enqueue_event(int fh) {
+    event_queue.push(fh);
+    ecv.notify_one();
+  }
 
   const std::string &fh_to_key(int fh) { return v.at(fh); }
 
