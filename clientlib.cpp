@@ -1,6 +1,4 @@
 
-#include <cassert>
-#include <chrono>
 #include <fcntl.h>
 #include <grpcpp/client_context.h>
 #include <grpcpp/grpcpp.h>
@@ -8,21 +6,24 @@
 #include <signal.h>
 #include <sys/stat.h>
 
-#include "grpcpp/channel.h"
-#include "grpcpp/create_channel.h"
-#include "grpcpp/security/credentials.h"
-#include "includes/skinny.grpc.pb.h"
-#include "includes/skinny.pb.h"
+#include <cassert>
+#include <chrono>
 #include <condition_variable>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
 
+#include "grpcpp/channel.h"
+#include "grpcpp/create_channel.h"
+#include "grpcpp/security/credentials.h"
+#include "includes/skinny.grpc.pb.h"
+#include "includes/skinny.pb.h"
+
 using grpc::ClientContext;
 
 class SkinnyClient {
-public:
+ public:
   SkinnyClient()
       : channel(grpc::CreateChannel("0.0.0.0:50012",
                                     grpc::InsecureChannelCredentials())),
@@ -70,7 +71,41 @@ public:
     assert(status.ok());
   }
 
-private:
+  bool TryAcquire(int fh, bool ex) {
+    skinny::LockAcqReq req;
+    ClientContext context;
+    skinny::LockRes res;
+    req.set_session_id(session_id);
+    req.set_fh(fh);
+    req.set_ex(ex);
+    auto status = stub_->TryAcquire(&context, req, &res);
+    assert(status.ok());
+    return (res.res() == 0);
+  }
+
+  bool Acquire(int fh, bool ex) {
+    skinny::LockAcqReq req;
+    ClientContext context;
+    skinny::LockRes res;
+    req.set_session_id(session_id);
+    req.set_fh(fh);
+    req.set_ex(ex);
+    auto status = stub_->Acquire(&context, req, &res);
+    assert(status.ok());
+    return (res.res() == 0);
+  }
+
+  void Release(int fh) {
+    skinny::LockRelReq req;
+    ClientContext context;
+    skinny::LockRes res;
+    req.set_session_id(session_id);
+    req.set_fh(fh);
+    auto status = stub_->Release(&context, req, &res);
+    assert(status.ok());
+  }
+
+ private:
   void KeepAlive() {
     skinny::SessionId req;
     skinny::Empty res;

@@ -51,6 +51,9 @@ target_link_libraries(server grpc++)
 add_executable(client client.cpp ${PROTOBUF_DST})
 target_link_libraries(client grpc++)
 
+add_executable(client2 client2.cpp ${PROTOBUF_DST})
+target_link_libraries(client2 grpc++)
+
 # find_package(FUSE REQUIRED)
 # include_directories(${FUSE_INCLUDE_DIR})
 # add_definitions("-D_FILE_OFFSET_BITS=64")

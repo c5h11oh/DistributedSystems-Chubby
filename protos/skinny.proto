@@ -11,7 +11,22 @@ message GetContentReq {
   int64 session_id = 1;
   int32 fh = 2;
 }
+
+message LockAcqReq {
+  int64 session_id = 1;
+  int32 fh = 2;
+  bool ex = 3;
+}
  
+message LockRelReq {
+  int64 session_id = 1;
+  int32 fh = 2;
+}
+
+message LockRes {
+  int32 res = 1;
+}
+
 message SetContentReq {
     int64 session_id = 1;
     int32 fh = 2;
@@ -39,6 +54,9 @@ service Skinny {
   rpc Open (OpenReq) returns (Handle) {}
   rpc GetContent(GetContentReq) returns (Content) {}
   rpc SetContent(SetContentReq) returns (Empty) {}
+  rpc TryAcquire(LockAcqReq) returns (LockRes) {}
+  rpc Acquire(LockAcqReq) returns (LockRes) {}
+  rpc Release(LockRelReq) returns (LockRes) {}
 }
 
 service SkinnyCb {
