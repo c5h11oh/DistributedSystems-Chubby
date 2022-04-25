@@ -83,7 +83,7 @@ class SkinnyClient {
   bool TryAcquire(int fh, bool ex) {
     skinny::LockAcqReq req;
     ClientContext context;
-    skinny::LockRes res;
+    skinny::Response res;
     req.set_session_id(session_id);
     req.set_fh(fh);
     req.set_ex(ex);
@@ -95,7 +95,7 @@ class SkinnyClient {
   bool Acquire(int fh, bool ex) {
     skinny::LockAcqReq req;
     ClientContext context;
-    skinny::LockRes res;
+    skinny::Response res;
     req.set_session_id(session_id);
     req.set_fh(fh);
     req.set_ex(ex);
@@ -107,7 +107,7 @@ class SkinnyClient {
   void Release(int fh) {
     skinny::LockRelReq req;
     ClientContext context;
-    skinny::LockRes res;
+    skinny::Response res;
     req.set_session_id(session_id);
     req.set_fh(fh);
     auto status = stub_->Release(&context, req, &res);

@@ -26,22 +26,21 @@ using grpc::Status;
 class FileMetaData {
  public:
   FileMetaData()
-      : instance_num(0),
+      : file_exists(true),
+        instance_num(0),
         content_gen_num(0),
-        lock_gen_num(0),
-        file_exists(true) {}
+        lock_gen_num(0) {}
 
   std::unordered_set<int> lock_holding_session;
   bool is_locked_ex;
   std::mutex mutex;
   std::condition_variable cv;
   std::list<std::weak_ptr<Session>> subscribers;
-  ;
 
   bool file_exists;
-  uint32_t instance_num;
-  uint32_t content_gen_num;
-  uint32_t lock_gen_num;
+  int instance_num;
+  int content_gen_num;
+  int lock_gen_num;
 };
 
 class SkinnyImpl final : public skinny::Skinny::Service {
@@ -55,11 +54,29 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     if (data.find(req->path()) == data.end()) {
       data[req->path()];
     }
+    data[req->path()].first.file_exists = true;  // for previously deleted keys
     if (req->subscribe()) {
       data[req->path()].first.subscribers.push_back(session);
     }
-    auto fh = session->add_new_handle(req->path());
+    auto fh = session->add_new_handle(req->path(),
+                                      data[req->path()].first.instance_num);
     res->set_fh(fh);
+    return Status::OK;
+  }
+
+  Status Delete(ServerContext *context, const skinny::DeleteReq *req,
+                skinny::Response *res) override {
+    auto session = sdb->find_session(req->session_id());
+    auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
+    content.clear();
+    meta.file_exists = false;
+    meta.instance_num++;
+    meta.content_gen_num = 0;
+    meta.lock_gen_num = 0;
+    for (const int &session_id : meta.lock_holding_session) {
+      // TODO: notify sessions that this lock is deleted.
+    }
+    meta.lock_holding_session.clear();
     return Status::OK;
   }
 
@@ -67,15 +84,19 @@ class SkinnyImpl final : public skinny::Skinny::Service {
                     skinny::Content *res) override {
     auto session = sdb->find_session(req->session_id());
     auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
+    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+      return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     res->set_content(content);
     return Status::OK;
   }
 
   Status TryAcquire(ServerContext *context, const skinny::LockAcqReq *req,
-                    skinny::LockRes *res) override {
+                    skinny::Response *res) override {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
+    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+      return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     {
       std::lock_guard<std::mutex> guard(meta.mutex);
       if (req->ex()) {  // Lock in exclusive mode
@@ -105,10 +126,12 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   }
 
   Status Acquire(ServerContext *context, const skinny::LockAcqReq *req,
-                 skinny::LockRes *res) override {
+                 skinny::Response *res) override {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
+    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+      return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     {
       std::unique_lock<std::mutex> ulock(meta.mutex);
       if (req->ex()) {  // Lock in exclusive mode
@@ -133,10 +156,12 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   }
 
   Status Release(ServerContext *context, const skinny::LockRelReq *req,
-                 skinny::LockRes *res) override {
+                 skinny::Response *res) override {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
+    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+      return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     bool need_notify;
     {
       std::lock_guard<std::mutex> guard(meta.mutex);
@@ -154,6 +179,8 @@ class SkinnyImpl final : public skinny::Skinny::Service {
                     skinny::Empty *) override {
     auto session = sdb->find_session(req->session_id());
     auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
+    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+      return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     content = req->content();
     for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
       auto ptr = it->lock();

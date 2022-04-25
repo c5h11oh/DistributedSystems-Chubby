@@ -17,8 +17,9 @@ class Session {
     if (kathread && kathread->joinable()) kathread->join();
   }
 
-  int add_new_handle(std::string path) {
+  int add_new_handle(std::string path, int instance_num) {
     v.push_back(path);
+    inum.push_back(instance_num);
     return v.size() - 1;
   }
 
@@ -28,7 +29,9 @@ class Session {
   }
 
   const std::string &fh_to_key(int fh) { return v.at(fh); }
+  const int &fh_to_inum(int fh) { return inum.at(fh); }
 
  private:
   std::vector<std::string> v;
+  std::vector<int> inum;  // instance_num
 };
