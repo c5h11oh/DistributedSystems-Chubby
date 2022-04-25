@@ -13,6 +13,10 @@ class Session {
   std::queue<int> event_queue;  // queue<fh>
   Session() : id(123) {}
 
+  ~Session() {
+    if (kathread && kathread->joinable()) kathread->join();
+  }
+
   int add_new_handle(std::string path) {
     v.push_back(path);
     return v.size() - 1;

@@ -143,11 +143,11 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto session = sdb->find_session(req->session_id());
     auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
     content = req->content();
-    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();
-         it++) {
+    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
       auto ptr = it->lock();
       if (ptr) {
         ptr->enqueue_event(req->fh());
+        it++;
       } else {
         it = meta.subscribers.erase(it);
       }
@@ -184,7 +184,8 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
       reactor->Finish(Status::OK);
       return reactor;
     }
-    if (session->kathread) session->kathread->join();
+    if (session->kathread && session->kathread->joinable())
+      session->kathread->join();
     session->kathread =
         std::make_unique<std::thread>([reactor, session, res]() {
           using namespace std::chrono_literals;
