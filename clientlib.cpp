@@ -10,6 +10,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -110,28 +111,17 @@ class SkinnyClient {
     ClientContext context;
     req.set_session_id(session_id);
 
-    std::mutex mu;
-    std::condition_variable cv;
-    bool done = false;
-    grpc::Status status;
+    std::promise<grpc::Status> status_promise;
+    std::future status_future = status_promise.get_future();
     stub_cb_->async()->KeepAlive(&context, &req, &res,
-                                 [&mu, &cv, &done, &status](grpc::Status s) {
-                                   status = std::move(s);
-                                   std::lock_guard<std::mutex> lock(mu);
-                                   done = true;
-                                   cv.notify_one();
+                                 [&status_promise](grpc::Status s) {
+                                   status_promise.set_value(std::move(s));
                                  });
 
-    std::unique_lock<std::mutex> lock(mu);
-    while (!done) {
-      cv.wait(lock);
-    }
-
-    if (status.ok()) {
-      if (res.has_fh()) {
-        if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
-          std::invoke(it->second);
-        }
+    if (auto status = status_future.get(); status.ok()) {
+      if (!res.has_fh()) return;
+      if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
+        std::invoke(it->second);
       }
     } else {
       std::cout << status.error_code() << ": " << status.error_message()
