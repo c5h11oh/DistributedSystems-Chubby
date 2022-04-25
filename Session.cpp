@@ -1,9 +1,11 @@
 #include <string>
+#include <thread>
 #include <vector>
 
 class Session {
 public:
   int id;
+  std::unique_ptr<std::thread> kathread;
   Session() : id(123) {}
   int add_new_handle(std::string path) {
     v.push_back(path);

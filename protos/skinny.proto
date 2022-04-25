@@ -40,3 +40,7 @@ service Skinny {
   rpc GetContent(GetContentReq) returns (Content) {}
   rpc SetContent(SetContentReq) returns (Empty) {}
 }
+
+service SkinnyCb {
+  rpc KeepAlive(SessionId) returns (Empty) {};
+}

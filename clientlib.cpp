@@ -1,5 +1,6 @@
 
 #include <cassert>
+#include <chrono>
 #include <fcntl.h>
 #include <grpcpp/client_context.h>
 #include <grpcpp/grpcpp.h>
@@ -7,38 +8,34 @@
 #include <signal.h>
 #include <sys/stat.h>
 
+#include "grpcpp/channel.h"
+#include "grpcpp/create_channel.h"
+#include "grpcpp/security/credentials.h"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
+#include <condition_variable>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 
 using grpc::ClientContext;
 
 class SkinnyClient {
 public:
-  SkinnyClient() {
-    const std::string target_str = "0.0.0.0:50051";
-    grpc::ChannelArguments ch_args;
-    ch_args.SetMaxReceiveMessageSize(INT_MAX);
-    ch_args.SetMaxSendMessageSize(INT_MAX);
-    auto channel = grpc::CreateCustomChannel(
-        target_str, grpc::InsecureChannelCredentials(), ch_args);
-    stub_ = skinny::Skinny::NewStub(channel);
-  }
-
-  void StartSessionOrDie() {
-    skinny::Empty req;
-    ClientContext context;
-    skinny::SessionId res;
-    auto status = stub_->StartSession(&context, req, &res);
-
-    std::cout << status.error_message() << std::endl;
-    std::cout << status.error_code() << std::endl;
-    assert(status.ok());
-    session_id = res.session_id();
-    return;
-  }
+  SkinnyClient()
+      : channel(grpc::CreateChannel("0.0.0.0:50012",
+                                    grpc::InsecureChannelCredentials())),
+        stub_(skinny::Skinny::NewStub(channel)),
+        stub_cb_(skinny::SkinnyCb::NewStub(channel)),
+        kathread(([this]() {
+          StartSessionOrDie();
+          return [this]() {
+            while (true) {
+              KeepAlive();
+            }
+          };
+        })()) {}
 
   int Open(const std::string &path) {
     skinny::OpenReq req;
@@ -74,6 +71,54 @@ public:
   }
 
 private:
+  void KeepAlive() {
+    skinny::SessionId req;
+    skinny::Empty res;
+    ClientContext context;
+    req.set_session_id(session_id);
+
+    std::mutex mu;
+    std::condition_variable cv;
+    bool done = false;
+    grpc::Status status;
+    stub_cb_->async()->KeepAlive(&context, &req, &res,
+                                 [&mu, &cv, &done, &status](grpc::Status s) {
+                                   status = std::move(s);
+                                   std::lock_guard<std::mutex> lock(mu);
+                                   done = true;
+                                   cv.notify_one();
+                                 });
+
+    std::unique_lock<std::mutex> lock(mu);
+    while (!done) {
+      cv.wait(lock);
+    }
+
+    if (status.ok()) {
+      std::cout << "good" << std::endl;
+    } else {
+      std::cout << status.error_code() << ": " << status.error_message()
+                << std::endl;
+    }
+  }
+
+  void StartSessionOrDie() {
+    skinny::Empty req;
+    ClientContext context;
+    skinny::SessionId res;
+    auto status = stub_->StartSession(&context, req, &res);
+
+    std::cout << status.error_message() << std::endl;
+    std::cout << status.error_code() << std::endl;
+    assert(status.ok());
+    session_id = res.session_id();
+    std::cerr << "session id: " << session_id << std::endl;
+    return;
+  }
+
+  std::shared_ptr<grpc::Channel> channel;
   std::unique_ptr<skinny::Skinny::Stub> stub_;
+  std::unique_ptr<skinny::SkinnyCb::Stub> stub_cb_;
   int session_id;
+  std::thread kathread;
 };
