@@ -25,7 +25,11 @@ using grpc::Status;
 
 class FileMetaData {
  public:
-  FileMetaData() : instance_num(0), content_gen_num(0), lock_gen_num(0) {}
+  FileMetaData()
+      : instance_num(0),
+        content_gen_num(0),
+        lock_gen_num(0),
+        file_exists(true) {}
 
   std::unordered_set<int> lock_holding_session;
   bool is_locked_ex;
@@ -34,6 +38,7 @@ class FileMetaData {
   std::list<std::weak_ptr<Session>> subscribers;
   ;
 
+  bool file_exists;
   uint32_t instance_num;
   uint32_t content_gen_num;
   uint32_t lock_gen_num;
