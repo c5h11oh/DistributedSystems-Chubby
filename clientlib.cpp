@@ -13,6 +13,7 @@
 #include <future>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -40,11 +41,20 @@ class SkinnyClient {
           };
         })()) {}
 
-  int Open(const std::string &path) { return OpenImpl(path, false); }
-
-  int Open(const std::string &path, const std::function<void()> &cb) {
-    auto fh = OpenImpl(path, true);
-    callbacks[fh] = cb;
+  int Open(const std::string &path,
+           const std::optional<std::function<void()>> &cb = std::nullopt) {
+    skinny::OpenReq req;
+    ClientContext context;
+    skinny::Handle res;
+    req.set_path(path);
+    req.set_session_id(session_id);
+    req.set_subscribe(cb.has_value());
+    auto status = stub_->Open(&context, req, &res);
+    assert(status.ok());
+    auto fh = res.fh();
+    if (cb) {
+      callbacks[fh] = cb.value();
+    }
     return fh;
   }
 
@@ -141,18 +151,6 @@ class SkinnyClient {
     session_id = res.session_id();
     std::cerr << "session id: " << session_id << std::endl;
     return;
-  }
-
-  int OpenImpl(const std::string &path, const bool subscribe) {
-    skinny::OpenReq req;
-    ClientContext context;
-    skinny::Handle res;
-    req.set_path(path);
-    req.set_session_id(session_id);
-    req.set_subscribe(subscribe);
-    auto status = stub_->Open(&context, req, &res);
-    assert(status.ok());
-    return res.fh();
   }
 
   std::shared_ptr<grpc::Channel> channel;
