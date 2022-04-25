@@ -1,12 +1,13 @@
-#include "Session.cpp"
 #include <cassert>
 #include <memory>
 #include <unordered_map>
 
+#include "Session.cpp"
+
 class SessionDb {
   std::unordered_map<int, std::shared_ptr<Session>> session_db;
 
-public:
+ public:
   std::shared_ptr<Session> create_session() {
     auto session = std::make_shared<Session>();
     session_db[session->id] = session;

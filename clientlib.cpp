@@ -9,6 +9,7 @@
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -25,7 +26,7 @@ using grpc::ClientContext;
 class SkinnyClient {
  public:
   SkinnyClient()
-      : channel(grpc::CreateChannel("0.0.0.0:50012",
+      : channel(grpc::CreateChannel("0.0.0.0:23456",
                                     grpc::InsecureChannelCredentials())),
         stub_(skinny::Skinny::NewStub(channel)),
         stub_cb_(skinny::SkinnyCb::NewStub(channel)),
@@ -38,15 +39,12 @@ class SkinnyClient {
           };
         })()) {}
 
-  int Open(const std::string &path) {
-    skinny::OpenReq req;
-    ClientContext context;
-    skinny::Handle res;
-    req.set_path(path);
-    req.set_session_id(session_id);
-    auto status = stub_->Open(&context, req, &res);
-    assert(status.ok());
-    return res.fh();
+  int Open(const std::string &path) { return OpenImpl(path, false); }
+
+  int Open(const std::string &path, const std::function<void()> &cb) {
+    auto fh = OpenImpl(path, true);
+    callbacks[fh] = cb;
+    return fh;
   }
 
   std::string GetContent(int fh) {
@@ -108,7 +106,7 @@ class SkinnyClient {
  private:
   void KeepAlive() {
     skinny::SessionId req;
-    skinny::Empty res;
+    skinny::Event res;
     ClientContext context;
     req.set_session_id(session_id);
 
@@ -130,7 +128,11 @@ class SkinnyClient {
     }
 
     if (status.ok()) {
-      std::cout << "good" << std::endl;
+      if (res.has_fh()) {
+        if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
+          std::invoke(it->second);
+        }
+      }
     } else {
       std::cout << status.error_code() << ": " << status.error_message()
                 << std::endl;
@@ -151,7 +153,21 @@ class SkinnyClient {
     return;
   }
 
+  int OpenImpl(const std::string &path, const bool subscribe) {
+    skinny::OpenReq req;
+    ClientContext context;
+    skinny::Handle res;
+    req.set_path(path);
+    req.set_session_id(session_id);
+    req.set_subscribe(subscribe);
+    auto status = stub_->Open(&context, req, &res);
+    assert(status.ok());
+    return res.fh();
+  }
+
   std::shared_ptr<grpc::Channel> channel;
+  // TODO: Maybe not an unordered_map
+  std::unordered_map<int, std::function<void()>> callbacks;
   std::unique_ptr<skinny::Skinny::Stub> stub_;
   std::unique_ptr<skinny::SkinnyCb::Stub> stub_cb_;
   int session_id;

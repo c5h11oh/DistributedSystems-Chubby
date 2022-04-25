@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <thread>
 
 #include "SessionDb.cpp"
@@ -18,7 +19,6 @@
 #include "includes/skinny.pb.h"
 
 using grpc::Server;
-using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::ServerUnaryReactor;
 using grpc::Status;
@@ -31,6 +31,8 @@ class FileMetaData {
   bool is_locked_ex;
   std::mutex mutex;
   std::condition_variable cv;
+  std::list<std::weak_ptr<Session>> subscribers;
+  ;
 
   uint32_t instance_num;
   uint32_t content_gen_num;
@@ -48,6 +50,9 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     if (data.find(req->path()) == data.end()) {
       data[req->path()];
     }
+    if (req->subscribe()) {
+      data[req->path()].first.subscribers.push_back(session);
+    }
     auto fh = session->add_new_handle(req->path());
     res->set_fh(fh);
     return Status::OK;
@@ -62,7 +67,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   }
 
   Status TryAcquire(ServerContext *context, const skinny::LockAcqReq *req,
-                    skinny::LockRes *res) {
+                    skinny::LockRes *res) override {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
@@ -91,7 +96,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   }
 
   Status Acquire(ServerContext *context, const skinny::LockAcqReq *req,
-                 skinny::LockRes *res) {
+                 skinny::LockRes *res) override {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
@@ -116,7 +121,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   }
 
   Status Release(ServerContext *context, const skinny::LockRelReq *req,
-                 skinny::LockRes *res) {
+                 skinny::LockRes *res) override {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
@@ -136,7 +141,17 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   Status SetContent(ServerContext *context, const skinny::SetContentReq *req,
                     skinny::Empty *) override {
     auto session = sdb->find_session(req->session_id());
-    data.at(session->fh_to_key(req->fh())).second = req->content();
+    auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
+    content = req->content();
+    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();
+         it++) {
+      auto ptr = it->lock();
+      if (ptr) {
+        ptr->enqueue_event(req->fh());
+      } else {
+        it = meta.subscribers.erase(it);
+      }
+    }
     return Status::OK;
   }
 
@@ -159,15 +174,29 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
  private:
   ServerUnaryReactor *KeepAlive(grpc::CallbackServerContext *context,
                                 const skinny::SessionId *req,
-                                skinny::Empty *) override {
+                                skinny::Event *res) override {
     auto session = sdb->find_session(req->session_id());
     ServerUnaryReactor *reactor = context->DefaultReactor();
     std::cout << "keepalive" << std::endl;
-    if (session->kathread) session->kathread->join();
-    session->kathread = std::make_unique<std::thread>([reactor]() {
-      std::this_thread::sleep_for(std::chrono::seconds(5));
+    if (!session->event_queue.empty()) {
+      res->set_fh(session->event_queue.front());
+      session->event_queue.pop();
       reactor->Finish(Status::OK);
-    });
+      return reactor;
+    }
+    if (session->kathread) session->kathread->join();
+    session->kathread =
+        std::make_unique<std::thread>([reactor, session, res]() {
+          using namespace std::chrono_literals;
+          std::unique_lock<std::mutex> lk(session->emu);
+          if (session->ecv.wait_for(lk, 1s, [session]() {
+                return !session->event_queue.empty();
+              })) {
+            res->set_fh(session->event_queue.front());
+            session->event_queue.pop();
+          }
+          reactor->Finish(Status::OK);
+        });
     return reactor;
   }
 
@@ -175,7 +204,7 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
 };
 
 int main() {
-  std::string server_address("localhost:50012");
+  std::string server_address("localhost:23456");
   auto sdb = std::make_shared<SessionDb>();
   SkinnyImpl service(sdb);
   SkinnyCbImpl service_cb(sdb);

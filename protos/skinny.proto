@@ -5,6 +5,7 @@ package skinny;
 message OpenReq {
   int64 session_id = 1;
   string path = 2;
+  bool subscribe = 3;
 }
 
 message GetContentReq {
@@ -45,6 +46,10 @@ message Content {
   string content = 1;
 }
 
+message Event {
+  optional int32 fh = 1;    
+}
+
 message Empty {
 
 }
@@ -60,5 +65,5 @@ service Skinny {
 }
 
 service SkinnyCb {
-  rpc KeepAlive(SessionId) returns (Empty) {};
+  rpc KeepAlive(SessionId) returns (Event) {};
 }
