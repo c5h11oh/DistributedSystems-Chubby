@@ -84,8 +84,12 @@ class SkinnyImpl final : public skinny::Skinny::Service {
         }
       } else {  // Lock in shared mode
         if (meta.lock_holding_session.empty() || !meta.is_locked_ex) {
+          if (meta.lock_holding_session.empty()) {
+            meta.is_locked_ex = false;  // first reader needs to set it
+            meta.lock_gen_num++;
+          }
           meta.lock_holding_session.insert(session->id);
-          meta.is_locked_ex = false;  // first reader needs to set it
+
           res->set_res(0);
         } else {
           res->set_res(-1);  // fail to acquire
@@ -112,8 +116,11 @@ class SkinnyImpl final : public skinny::Skinny::Service {
         meta.cv.wait(ulock, [&] {
           return meta.lock_holding_session.empty() || !meta.is_locked_ex;
         });
+        if (meta.lock_holding_session.empty()) {
+          meta.is_locked_ex = false;
+          meta.lock_gen_num++;
+        }
         meta.lock_holding_session.insert(session->id);
-        meta.is_locked_ex = false;
       }
       res->set_res(0);
     }
