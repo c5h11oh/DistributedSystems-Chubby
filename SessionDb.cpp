@@ -19,4 +19,10 @@ class SessionDb {
     assert(it != session_db.end());
     return it->second;
   }
+
+  void delete_session(int id) {
+    auto it = session_db.find(id);
+    assert(it != session_db.end());
+    session_db.erase(it);
+  }
 };

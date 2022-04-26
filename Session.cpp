@@ -1,3 +1,4 @@
+#include <atomic>
 #include <condition_variable>
 #include <queue>
 #include <string>
@@ -11,7 +12,7 @@ class Session {
   std::condition_variable ecv;
   std::mutex emu;
   std::queue<int> event_queue;  // queue<fh>
-  Session() : id(123) {}
+  Session() { id = next_id.fetch_add(1, std::memory_order_relaxed); }
 
   ~Session() {
     if (kathread && kathread->joinable()) kathread->join();
@@ -22,6 +23,9 @@ class Session {
     inum.push_back(instance_num);
     return v.size() - 1;
   }
+  void close_handle(int fh) { inum.at(fh) = -1; }
+  int handle_count() { return v.size(); }
+  const int &handle_inum(int fh) { return inum.at(fh); }
 
   void enqueue_event(int fh) {
     event_queue.push(fh);
@@ -29,9 +33,9 @@ class Session {
   }
 
   const std::string &fh_to_key(int fh) { return v.at(fh); }
-  const int &fh_to_inum(int fh) { return inum.at(fh); }
 
  private:
   std::vector<std::string> v;
   std::vector<int> inum;  // instance_num
+  static std::atomic<int> inline next_id{0};
 };

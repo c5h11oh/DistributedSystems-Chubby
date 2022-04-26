@@ -31,7 +31,7 @@ class FileMetaData {
         content_gen_num(0),
         lock_gen_num(0) {}
 
-  std::unordered_set<int> lock_holding_session;
+  std::unordered_set<int> lock_owners;
   bool is_locked_ex;
   std::mutex mutex;
   std::condition_variable cv;
@@ -69,14 +69,18 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto session = sdb->find_session(req->session_id());
     auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
     content.clear();
-    meta.file_exists = false;
-    meta.instance_num++;
-    meta.content_gen_num = 0;
-    meta.lock_gen_num = 0;
-    for (const int &session_id : meta.lock_holding_session) {
-      // TODO: notify sessions that this lock is deleted.
+    {
+      std::lock_guard<std::mutex> guard(meta.mutex);
+      meta.file_exists = false;
+      meta.instance_num++;
+      meta.content_gen_num = 0;
+      meta.lock_gen_num = 0;
+      for (const int &session_id : meta.lock_owners) {
+        // TODO: notify sessions that this lock is deleted.
+      }
+      meta.lock_owners.clear();
     }
-    meta.lock_holding_session.clear();
+    meta.cv.notify_all();
     return Status::OK;
   }
 
@@ -84,8 +88,10 @@ class SkinnyImpl final : public skinny::Skinny::Service {
                     skinny::Content *res) override {
     auto session = sdb->find_session(req->session_id());
     auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
-    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+    if (session->handle_inum(req->fh()) != meta.instance_num)
       return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
+    if (!meta.file_exists)
+      return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
     res->set_content(content);
     return Status::OK;
   }
@@ -95,13 +101,15 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
-    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+    if (session->handle_inum(req->fh()) != meta.instance_num)
       return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     {
       std::lock_guard<std::mutex> guard(meta.mutex);
+      if (!meta.file_exists)
+        return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
       if (req->ex()) {  // Lock in exclusive mode
-        if (meta.lock_holding_session.empty()) {
-          meta.lock_holding_session.insert(session->id);
+        if (meta.lock_owners.empty()) {
+          meta.lock_owners.insert(session->id);
           meta.is_locked_ex = true;
           meta.lock_gen_num++;
           res->set_res(0);
@@ -109,12 +117,12 @@ class SkinnyImpl final : public skinny::Skinny::Service {
           res->set_res(-1);  // fail to acquire
         }
       } else {  // Lock in shared mode
-        if (meta.lock_holding_session.empty() || !meta.is_locked_ex) {
-          if (meta.lock_holding_session.empty()) {
+        if (meta.lock_owners.empty() || !meta.is_locked_ex) {
+          if (meta.lock_owners.empty()) {
             meta.is_locked_ex = false;  // first reader needs to set it
             meta.lock_gen_num++;
           }
-          meta.lock_holding_session.insert(session->id);
+          meta.lock_owners.insert(session->id);
 
           res->set_res(0);
         } else {
@@ -130,25 +138,28 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
-    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+    if (session->handle_inum(req->fh()) != meta.instance_num)
       return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     {
       std::unique_lock<std::mutex> ulock(meta.mutex);
       if (req->ex()) {  // Lock in exclusive mode
-        meta.cv.wait(ulock, [&] { return meta.lock_holding_session.empty(); });
-        assert(meta.lock_holding_session.empty());  // TODO: delete this line...
-        meta.lock_holding_session.insert(session->id);
+        meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
+        if (!meta.file_exists)
+          return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
+        meta.lock_owners.insert(session->id);
         meta.is_locked_ex = true;
         meta.lock_gen_num++;
       } else {  // Lock in shared mode
         meta.cv.wait(ulock, [&] {
-          return meta.lock_holding_session.empty() || !meta.is_locked_ex;
+          return meta.lock_owners.empty() || !meta.is_locked_ex;
         });
-        if (meta.lock_holding_session.empty()) {
+        if (!meta.file_exists)
+          return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
+        if (meta.lock_owners.empty()) {
           meta.is_locked_ex = false;
           meta.lock_gen_num++;
         }
-        meta.lock_holding_session.insert(session->id);
+        meta.lock_owners.insert(session->id);
       }
       res->set_res(0);
     }
@@ -160,27 +171,21 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto session = sdb->find_session(req->session_id());
     auto key = session->fh_to_key(req->fh());
     auto &meta = data.at(key).first;
-    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+    if (session->handle_inum(req->fh()) != meta.instance_num)
       return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
-    bool need_notify;
-    {
-      std::lock_guard<std::mutex> guard(meta.mutex);
-      meta.lock_holding_session.erase(session->id);
-      need_notify = meta.lock_holding_session.empty();
-      res->set_res(0);
-    }
-    if (need_notify)
-      meta.cv.notify_all();  // If a EX lock is released, *all* waiting SH reqs
-                             // should acquire the lock
-    return Status::OK;
+    return unlock(session->id, meta)
+               ? Status::OK
+               : Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
   }
 
   Status SetContent(ServerContext *context, const skinny::SetContentReq *req,
                     skinny::Empty *) override {
     auto session = sdb->find_session(req->session_id());
     auto &[meta, content] = data.at(session->fh_to_key(req->fh()));
-    if (session->fh_to_inum(req->fh()) != meta.instance_num)
+    if (session->handle_inum(req->fh()) != meta.instance_num)
       return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
+    if (!meta.file_exists)
+      return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
     content = req->content();
     for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
       auto ptr = it->lock();
@@ -200,6 +205,35 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto session = sdb->create_session();
     res->set_session_id(session->id);
     return Status::OK;
+  }
+
+  bool unlock(int session_id, FileMetaData &meta) {
+    bool need_notify;
+    {
+      std::lock_guard<std::mutex> guard(meta.mutex);
+      if (!meta.file_exists) return false;
+      meta.lock_owners.erase(session_id);
+      need_notify = meta.lock_owners.empty();
+    }
+    if (need_notify)
+      meta.cv.notify_all();  // If a EX lock is released, *all* waiting SH reqs
+    // should acquire the lock
+    return true;
+  }
+
+  void close_handle(int session_id, int fh) {
+    auto session = sdb->find_session(session_id);
+    if (session->handle_inum(fh) == -1) return;  // handle already closed
+    auto &meta = data.at(session->fh_to_key(fh)).first;
+    if (meta.lock_owners.find(session_id) != meta.lock_owners.end())
+      unlock(session_id, meta);
+    session->close_handle(fh);
+  }
+
+  void close_session(int64_t session_id) {
+    auto session = sdb->find_session(session_id);
+    for (int i = 0; i < session->handle_count(); ++i) session->close_handle(i);
+    sdb->delete_session(session_id);
   }
 
   std::shared_ptr<SessionDb> sdb;
