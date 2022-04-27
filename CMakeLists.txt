@@ -11,10 +11,25 @@ include(FetchContent)
 fetchcontent_declare(
   gRPC
   GIT_REPOSITORY https://github.com/grpc/grpc
-  GIT_TAG v1.45.0
+  GIT_TAG v1.45.2
+)
+
+fetchcontent_declare(
+  nuraft
+  GIT_REPOSITORY https://github.com/eBay/NuRaft
+  GIT_TAG v1.3.0
+)
+
+fetchcontent_declare(
+  asio
+  GIT_REPOSITORY https://github.com/chriskohlhoff/asio
+  GIT_TAG asio-1-22-1
 )
 set(FETCHCONTENT_QUIET OFF)
 fetchcontent_makeavailable(gRPC)
+fetchcontent_makeavailable(asio)
+set(ASIO_INCLUDE_DIR ${asio_SOURCE_DIR}/asio/include)
+fetchcontent_makeavailable(nuraft)
 
 
 file(GLOB PROTOBUF_SRC "protos/*")
@@ -36,17 +51,13 @@ add_custom_command(
   --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/protos
   --cpp_out=${CMAKE_CURRENT_SOURCE_DIR}/includes
   --grpc_out=${CMAKE_CURRENT_SOURCE_DIR}/includes
-  --plugin=protoc-gen-grpc=_deps/grpc-build/grpc_cpp_plugin
+  --plugin=protoc-gen-grpc=${grpc_BINARY_DIR}/grpc_cpp_plugin
   ${CMAKE_CURRENT_SOURCE_DIR}/protos/*.proto
-  DEPENDS ${PROTOBUF_SRC} protoc
+  DEPENDS ${PROTOBUF_SRC} protoc grpc_cpp_plugin grpc++_reflection
 )
-
-# include_directories(${CMAKE_CURRENT_SOURCE_DIR}/includes)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/includes)
 add_executable(server server.cpp ${PROTOBUF_DST})
 target_link_libraries(server grpc++)
-
-# add_library(hadev STATIC BlockStoreClient.cpp ${PROTOBUF_DST})
-# target_link_libraries(hadev grpc++)
 
 add_executable(client client.cpp ${PROTOBUF_DST})
 target_link_libraries(client grpc++)
@@ -57,15 +68,9 @@ target_link_libraries(client2 grpc++)
 add_executable(client_sub client_sub.cpp ${PROTOBUF_DST})
 target_link_libraries(client_sub grpc++)
 
-
-# find_package(FUSE REQUIRED)
-# include_directories(${FUSE_INCLUDE_DIR})
-# add_definitions("-D_FILE_OFFSET_BITS=64")
-# add_executable(mfsfuse fs/io.cpp fs/io.h fs/mfs.cpp fs/mfs.h fs/mfsfuse.cpp)
-# target_link_libraries(mfsfuse hadev grpc++ ${FUSE_LIBRARIES})
-
-# add_executable(ReadWrite measurement/ReadWrite.cpp)
-# target_link_libraries(ReadWrite hadev grpc++)
-
-# add_executable(SingleServer measurement/SingleServer.cpp measurement/SingleBlockStoreServiceImpl.cpp ${PROTOBUF_DST})
-# target_link_libraries(SingleServer grpc++)
+find_package(OpenSSL REQUIRED)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
+add_executable(raft raft.cpp)
+target_include_directories(raft PUBLIC ${nuraft_SOURCE_DIR}/include)
+target_link_libraries(raft static_lib OpenSSL::SSL Threads::Threads)
