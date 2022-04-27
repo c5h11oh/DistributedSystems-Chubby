@@ -7,8 +7,6 @@
 #include <unordered_map>
 #include <vector>
 
-#include "build/_deps/grpc-src/third_party/protobuf/src/google/protobuf/descriptor.h"
-
 class MockErrorCollector
     : public google::protobuf::compiler::MultiFileErrorCollector {
  public:
