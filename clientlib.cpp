@@ -28,16 +28,17 @@ using grpc::ClientContext;
 class SkinnyClient {
  public:
   SkinnyClient()
-      : channel(grpc::CreateChannel("0.0.0.0:23456",
+      : channel(grpc::CreateChannel("0.0.0.0:10021",
                                     grpc::InsecureChannelCredentials())),
         stub_(skinny::Skinny::NewStub(channel)),
         stub_cb_(skinny::SkinnyCb::NewStub(channel)),
         kathread(([this]() {
           StartSessionOrDie();
           return [this]() {
-            while (true) {
-              KeepAlive();
-            }
+            // TODO: reenable
+            // while (true) {
+            //   KeepAlive();
+            // }
           };
         })()) {}
 

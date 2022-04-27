@@ -15,13 +15,13 @@ int main(int argc, char *argv[]) {
   skinny.SetContent(fh2, "hello banana");
   std::cout << skinny.GetContent(fh2) << std::endl;
 
-  if (skinny.Acquire(fh2, true))
-    std::cout << "Got fh2 ex lock\n";
-  else
-    std::cout << "Fail to get fh2 ex lock\n";
+  // if (skinny.Acquire(fh2, true))
+  //   std::cout << "Got fh2 ex lock\n";
+  // else
+  //   std::cout << "Fail to get fh2 ex lock\n";
 
-  std::this_thread::sleep_for(3s);
-  skinny.Release(fh2);
+  // std::this_thread::sleep_for(3s);
+  // skinny.Release(fh2);
 
   std::this_thread::sleep_for(50s);
   return 0;
