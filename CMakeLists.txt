@@ -36,6 +36,7 @@ fetchcontent_makeavailable(nuraft)
 
 set(PROTOBUF_SRC "protos/skinny.proto")
 set(PROTOBUF_DST "")
+set(PROTOBUF_ABS_SRC "")
 set(PROTOBUF_EXT ".grpc.pb.cc" ".grpc.pb.h" ".pb.cc" ".pb.h")
 foreach(file ${PROTOBUF_SRC})
   foreach(ext ${PROTOBUF_EXT})
@@ -44,17 +45,18 @@ foreach(file ${PROTOBUF_SRC})
     string(APPEND fileh ${ext})
     list(APPEND PROTOBUF_DST ${fileh})
   endforeach()
+  list(APPEND PROTOBUF_ABS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/${file}")
 endforeach()
 
 
 add_custom_command(
   OUTPUT ${PROTOBUF_DST}
-  COMMAND _deps/grpc-build/third_party/protobuf/protoc
+  COMMAND ${grpc_BINARY_DIR}/third_party/protobuf/protoc
   --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/protos
   --cpp_out=${CMAKE_CURRENT_SOURCE_DIR}/includes
   --grpc_out=${CMAKE_CURRENT_SOURCE_DIR}/includes
   --plugin=protoc-gen-grpc=${grpc_BINARY_DIR}/grpc_cpp_plugin
-  ${CMAKE_CURRENT_SOURCE_DIR}/protos/*.proto
+  ${PROTOBUF_ABS_SRC}
   DEPENDS ${PROTOBUF_SRC} protoc grpc_cpp_plugin grpc++_reflection
 )
 
