@@ -90,7 +90,12 @@ void gen_code(const std::string& action_name,
     printf("%s(%s)", fields[i]->name.c_str(), fields[i]->name.c_str());
   }
   puts("{}");
-
+  puts("template <typename T>");
+  printf("%s(const T* t) {\n", action_name.c_str());
+  for (int i = 0; i < fields.size(); i++) {
+    printf("%s = t->%s();\n", fields[i]->name.c_str(), fields[i]->name.c_str());
+  }
+  puts("}");
   printf("%s(nuraft::buffer &data) {\n", action_name.c_str());
   puts("nuraft::buffer_serializer bs(data);");
   if (is_action) {
