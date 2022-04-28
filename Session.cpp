@@ -9,6 +9,7 @@ namespace session {
 class Entry {
  public:
   int id;
+
   std::unique_ptr<std::thread> kathread;
   std::condition_variable ecv;
   std::mutex emu;

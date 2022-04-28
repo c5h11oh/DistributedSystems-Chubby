@@ -3,6 +3,7 @@
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/server_context.h>
 #include <grpcpp/support/server_callback.h>
+#include <grpcpp/support/status_code_enum.h>
 #include <grpcpp/support/sync_stream.h>
 #include <signal.h>
 #include <sys/stat.h>
@@ -12,6 +13,7 @@
 #include <exception>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_set>
 
@@ -20,6 +22,7 @@
 #include "includes/skinny.pb.h"
 
 using grpc::ServerContext;
+using grpc::ServerUnaryReactor;
 using grpc::Status;
 
 class SkinnyImpl final : public skinny::Skinny::Service {
@@ -76,4 +79,49 @@ class SkinnyImpl final : public skinny::Skinny::Service {
 
   std::shared_ptr<nuraft::raft_server> raft_;
   std::shared_ptr<StateMachine::StateMachine> sm_;
+};
+
+class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
+ public:
+  explicit SkinnyCbImpl(std::shared_ptr<nuraft::raft_server> raft,
+                        std::shared_ptr<session::Db> sdb)
+      : sdb_(sdb), raft_(raft){};
+
+ private:
+  ServerUnaryReactor *KeepAlive(grpc::CallbackServerContext *context,
+                                const skinny::SessionId *req,
+                                skinny::Event *res) override {
+    ServerUnaryReactor *reactor = context->DefaultReactor();
+    if (!raft_->is_leader()) {
+      reactor->Finish(Status(grpc::StatusCode::CANCELLED,
+                             std::to_string(raft_->get_leader())));
+      return reactor;
+    }
+    auto session = sdb_->find_session(req->session_id());
+    std::cout << "keepalive" << std::endl;
+    if (!session->event_queue.empty()) {
+      res->set_fh(session->event_queue.front());
+      session->event_queue.pop();
+      reactor->Finish(Status::OK);
+      return reactor;
+    }
+    if (session->kathread && session->kathread->joinable())
+      session->kathread->join();
+    session->kathread =
+        std::make_unique<std::thread>([reactor, session, res]() {
+          using namespace std::chrono_literals;
+          std::unique_lock<std::mutex> lk(session->emu);
+          if (session->ecv.wait_for(lk, 1s, [session]() {
+                return !session->event_queue.empty();
+              })) {
+            res->set_fh(session->event_queue.front());
+            session->event_queue.pop();
+          }
+          reactor->Finish(Status::OK);
+        });
+    return reactor;
+  }
+
+  std::shared_ptr<nuraft::raft_server> raft_;
+  std::shared_ptr<session::Db> sdb_;
 };

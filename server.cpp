@@ -27,6 +27,7 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
   std::string server_address(
       "localhost:" + std::to_string(std::get<1>(SRV_CONFIG[node_id]) + 1));
   SkinnyImpl service(raft, sm);
+  SkinnyCbImpl cbservice(raft, sm->get_sdb());
   grpc::ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
@@ -37,6 +38,7 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
   // Register "service" as the instance through which we'll communicate with
   // clients. In this case it corresponds to an *synchronous* service.
   builder.RegisterService(&service);
+  builder.RegisterService(&cbservice);
   // Finally assemble the server.
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
   std::cout << "Server listening on " << server_address << std::endl;
@@ -85,8 +87,9 @@ auto init_raft(int node_id,
 int main(int argc, char **argv) {
   assert(argc >= 2);
   const int node_id = atoi(argv[1]);
+  auto sdb = std::make_shared<session::Db>();
   std::shared_ptr<StateMachine::StateMachine> my_state_machine =
-      std::make_shared<StateMachine::StateMachine>();
+      std::make_shared<StateMachine::StateMachine>(sdb);
   auto launcher = init_raft(node_id, my_state_machine);
   auto server =
       init_grpc(node_id, launcher.get_raft_server(), my_state_machine);
