@@ -31,7 +31,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
  private:
   Status Open(ServerContext *context, const skinny::OpenReq *req,
               skinny::Handle *res) override {
-    action::OpenAction action{req->session_id(), req->path()};
+    action::OpenAction action{req};
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (!raft_ret->get_accepted()) {
       std::cout << "Open failed (raft)" << std::endl;
@@ -51,8 +51,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
 
   Status SetContent(ServerContext *context, const skinny::SetContentReq *req,
                     skinny::Empty *) override {
-    action::SetContentAction action{req->session_id(), req->fh(),
-                                    req->content()};
+    action::SetContentAction action{req};
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (!raft_ret->get_accepted()) {
       std::cout << "SetContent failed (raft)" << std::endl;
