@@ -22,14 +22,18 @@
 #include "grpcpp/security/credentials.h"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
+#include "srv_config.h"
 
 using grpc::ClientContext;
 
 class SkinnyClient {
  public:
   SkinnyClient()
-      : channel(grpc::CreateChannel("0.0.0.0:10021",
-                                    grpc::InsecureChannelCredentials())),
+      : cur_srv_id(2),
+        channel(grpc::CreateChannel(
+            std::get<0>(SRV_CONFIG[cur_srv_id]) + ":" +
+                std::to_string(std::get<1>(SRV_CONFIG[cur_srv_id]) + 1),
+            grpc::InsecureChannelCredentials())),
         stub_(skinny::Skinny::NewStub(channel)),
         stub_cb_(skinny::SkinnyCb::NewStub(channel)),
         kathread(([this]() {
@@ -141,19 +145,32 @@ class SkinnyClient {
   }
 
   void StartSessionOrDie() {
-    skinny::Empty req;
-    ClientContext context;
-    skinny::SessionId res;
-    auto status = stub_->StartSession(&context, req, &res);
-
-    std::cout << status.error_message() << std::endl;
-    std::cout << status.error_code() << std::endl;
-    assert(status.ok());
-    session_id = res.session_id();
-    std::cerr << "session id: " << session_id << std::endl;
-    return;
+    for (int i = 0; i < SRV_CONFIG.size(); ++i) {
+      change_server(i);
+      skinny::Empty req;
+      ClientContext context;
+      skinny::SessionId res;
+      auto status = stub_->StartSession(&context, req, &res);
+      if (status.ok()) {
+        session_id = res.session_id();
+        std::cerr << "session id: " << session_id << std::endl;
+        return;
+      }
+    }
+    assert(false);
   }
 
+  void change_server(int server_id) {
+    cur_srv_id = server_id;
+    channel = grpc::CreateChannel(
+        std::get<0>(SRV_CONFIG[cur_srv_id]) + ":" +
+            std::to_string(std::get<1>(SRV_CONFIG[cur_srv_id]) + 1),
+        grpc::InsecureChannelCredentials());
+    stub_ = skinny::Skinny::NewStub(channel);
+    stub_cb_ = skinny::SkinnyCb::NewStub(channel);
+  }
+
+  int cur_srv_id;
   std::shared_ptr<grpc::Channel> channel;
   // TODO: Maybe not an unordered_map
   std::unordered_map<int, std::function<void()>> callbacks;

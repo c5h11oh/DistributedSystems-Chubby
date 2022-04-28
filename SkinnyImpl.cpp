@@ -66,7 +66,8 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (!raft_ret->get_accepted()) {
       std::cout << "StartSession failed (raft)" << std::endl;
-      return Status::CANCELLED;
+      return Status(grpc::StatusCode::CANCELLED,
+                    std::to_string(raft_->get_leader()));
     }
     action::StartSessionReturn r(*raft_ret->get());
     res->set_session_id(r.seesion_id);
