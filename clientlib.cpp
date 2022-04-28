@@ -3,6 +3,7 @@
 #include <grpcpp/client_context.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/support/status.h>
+#include <grpcpp/support/status_code_enum.h>
 #include <signal.h>
 #include <sys/stat.h>
 
@@ -29,22 +30,14 @@ using grpc::ClientContext;
 class SkinnyClient {
  public:
   SkinnyClient()
-      : cur_srv_id(2),
-        channel(grpc::CreateChannel(
-            std::get<0>(SRV_CONFIG[cur_srv_id]) + ":" +
-                std::to_string(std::get<1>(SRV_CONFIG[cur_srv_id]) + 1),
-            grpc::InsecureChannelCredentials())),
-        stub_(skinny::Skinny::NewStub(channel)),
-        stub_cb_(skinny::SkinnyCb::NewStub(channel)),
-        kathread(([this]() {
+      : kathread(std::invoke(([this]() {
           StartSessionOrDie();
           return [this]() {
-            // TODO: reenable
-            // while (true) {
-            //   KeepAlive();
-            // }
+            while (true) {
+              KeepAlive();
+            }
           };
-        })()) {}
+        }))) {}
 
   int Open(const std::string &path,
            const std::optional<std::function<void()>> &cb = std::nullopt) {
@@ -121,9 +114,12 @@ class SkinnyClient {
 
  private:
   void KeepAlive() {
+    using namespace std::chrono_literals;
     skinny::SessionId req;
     skinny::Event res;
     ClientContext context;
+    auto deadline = std::chrono::system_clock::now() + 10s;
+    context.set_deadline(deadline);
     req.set_session_id(session_id);
 
     std::promise<grpc::Status> status_promise;
@@ -139,8 +135,16 @@ class SkinnyClient {
         std::invoke(it->second);
       }
     } else {
+      int next_server_id = cur_srv_id + 1;
+      if (status.error_code() == grpc::StatusCode::CANCELLED) {
+        if (auto new_leader = std::stoi(status.error_message());
+            new_leader != -1)
+          next_server_id = new_leader;
+      }
+      change_server(next_server_id);
       std::cout << status.error_code() << ": " << status.error_message()
                 << std::endl;
+      std::this_thread::sleep_for(500ms);
     }
   }
 
@@ -161,13 +165,15 @@ class SkinnyClient {
   }
 
   void change_server(int server_id) {
-    cur_srv_id = server_id;
+    assert(server_id >= 0);
+    cur_srv_id = server_id % SRV_CONFIG.size();
     channel = grpc::CreateChannel(
         std::get<0>(SRV_CONFIG[cur_srv_id]) + ":" +
             std::to_string(std::get<1>(SRV_CONFIG[cur_srv_id]) + 1),
         grpc::InsecureChannelCredentials());
     stub_ = skinny::Skinny::NewStub(channel);
     stub_cb_ = skinny::SkinnyCb::NewStub(channel);
+    return;
   }
 
   int cur_srv_id;

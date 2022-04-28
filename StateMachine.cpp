@@ -39,7 +39,8 @@ namespace StateMachine {
 using namespace nuraft;
 class StateMachine : public state_machine {
  public:
-  StateMachine() : last_committed_idx_(0) {}
+  StateMachine(std::shared_ptr<session::Db> sdb)
+      : last_committed_idx_(0), sdb_(sdb) {}
 
   ~StateMachine() {}
 
@@ -91,7 +92,7 @@ class StateMachine : public state_machine {
   }
 
   const std::string& get_content(int session_id, int fh) {
-    auto session = sdb_.find_session(session_id);
+    auto session = sdb_->find_session(session_id);
     auto& [meta, content] = data_.at(session->fh_to_key(fh));
     return content;
     // if (session->handle_inum(req->fh()) != meta.instance_num)
@@ -102,9 +103,11 @@ class StateMachine : public state_machine {
     // return Status::OK;
   }
 
+  auto get_sdb() { return sdb_; }
+
  private:
   ptr<buffer> apply_(action::OpenAction& a) {
-    auto session = sdb_.find_session(a.session_id);
+    auto session = sdb_->find_session(a.session_id);
     if (data_.find(a.path) == data_.end()) {
       data_[a.path];
     }
@@ -118,13 +121,13 @@ class StateMachine : public state_machine {
   }
 
   ptr<buffer> apply_(action::StartSessionAction& a) {
-    auto session = sdb_.create_session();
+    auto session = sdb_->create_session();
     action::StartSessionReturn ret(session->id);
     return ret.serialize();
   }
 
   ptr<buffer> apply_(action::SetContentAction& a) {
-    auto session = sdb_.find_session(a.session_id);
+    auto session = sdb_->find_session(a.session_id);
     auto& [meta, content] = data_.at(session->fh_to_key(a.fh));
     // if (session->handle_inum(req->fh()) != meta.instance_num)
     //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
@@ -152,7 +155,7 @@ class StateMachine : public state_machine {
   // Mutex for last snapshot.
   std::mutex last_snapshot_lock_;
 
-  session::Db sdb_;
+  std::shared_ptr<session::Db> sdb_;
   std::unordered_map<std::string, std::pair<FileMetaData, std::string>> data_;
 };
 }  // namespace StateMachine
