@@ -20,15 +20,12 @@
 #include "in_memory_state_mgr.hxx"
 #include "libnuraft/nuraft.hxx"
 #include "libnuraft/srv_config.hxx"
-
-// GRPC will be using raft port + 1
-static const std::vector<std::tuple<int, std::string, int>> SRV_CONFIG{
-    {0, "localhost", 10000}, {1, "localhost", 10010}, {2, "localhost", 10020}};
+#include "srv_config.h"
 
 auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
                std::shared_ptr<StateMachine::StateMachine> sm) {
   std::string server_address(
-      "localhost:" + std::to_string(std::get<2>(SRV_CONFIG[node_id]) + 1));
+      "localhost:" + std::to_string(std::get<1>(SRV_CONFIG[node_id]) + 1));
   SkinnyImpl service(raft, sm);
   grpc::ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
@@ -50,7 +47,7 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
 auto init_raft(int node_id,
                std::shared_ptr<StateMachine::StateMachine> my_state_machine) {
   using namespace nuraft;
-  const auto [_, host, port] = SRV_CONFIG[node_id];
+  const auto [host, port] = SRV_CONFIG[node_id];
   const auto endpoint = host + ":" + std::to_string(port);
   // Replace with your logger, state machine, and state manager.
   ptr<logger> my_logger = nullptr;
@@ -72,11 +69,11 @@ auto init_raft(int node_id,
   for (int i = 0; i < SRV_CONFIG.size(); i++) {
     if (i == node_id) continue;
     std::cout << "Waiting for node " << i << std::endl;
-    const auto [fid, fhost, fport] = SRV_CONFIG[i];
+    const auto [fhost, fport] = SRV_CONFIG[i];
     const auto fendpoint = fhost + ":" + std::to_string(fport);
     ptr<srv_config> ret;
     do {
-      server->add_srv({fid, fendpoint})->get_result_code();
+      server->add_srv({i, fendpoint})->get_result_code();
       std::this_thread::sleep_for(std::chrono::milliseconds(100));
       ret = server->get_srv_config(i);
     } while (ret == nullptr);
