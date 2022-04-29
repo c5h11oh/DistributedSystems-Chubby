@@ -31,8 +31,9 @@ using grpc::Status;
 class SkinnyImpl final : public skinny::Skinny::Service {
  public:
   explicit SkinnyImpl(std::shared_ptr<nuraft::raft_server> raft,
-                      std::shared_ptr<StateMachine::StateMachine> sm)
-      : raft_(raft), sm_(sm){};
+                      std::shared_ptr<DataStore> ds,
+                      std::shared_ptr<session::Db> sdb)
+      : raft_(raft), ds_(ds), sdb_(sdb){};
 
  private:
   Status parse_raft_result(
@@ -67,7 +68,10 @@ class SkinnyImpl final : public skinny::Skinny::Service {
           static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER),
           std::to_string(raft_->get_leader()));
     }
-    res->set_content(sm_->get_content(req->session_id(), req->fh()));
+    // TODO
+    auto session = sdb_->find_session(req->session_id());
+    auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
+    res->set_content(content);
     return Status::OK;
   }
 
@@ -93,8 +97,21 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     return Status::OK;
   }
 
+  Status TryAcquire(ServerContext *context, const skinny::LockAcqReq *req,
+                    skinny::Response *res) override {
+    // action::LockAcqAction action;
+    // auto raft_ret = raft_->append_entries({action.serialize()});
+    // if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+    //   return status;
+    // }
+    // action::StartSessionReturn r(*raft_ret->get());
+    // res->set_session_id(r.seesion_id);
+    // return Status::OK;
+  }
+
   std::shared_ptr<nuraft::raft_server> raft_;
-  std::shared_ptr<StateMachine::StateMachine> sm_;
+  const std::shared_ptr<DataStore> ds_;
+  std::shared_ptr<session::Db> sdb_;
 };
 
 class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {

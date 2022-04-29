@@ -14,33 +14,14 @@
 #include "libnuraft/buffer.hxx"
 #include "libnuraft/nuraft.hxx"
 #include "libnuraft/state_machine.hxx"
-
-class FileMetaData {
- public:
-  FileMetaData()
-      : file_exists(true),
-        instance_num(0),
-        content_gen_num(0),
-        lock_gen_num(0) {}
-
-  std::unordered_set<int> lock_owners;
-  bool is_locked_ex;
-  std::mutex mutex;
-  std::condition_variable cv;
-  std::list<std::weak_ptr<session::Entry>> subscribers;
-
-  bool file_exists;
-  int instance_num;
-  int content_gen_num;
-  int lock_gen_num;
-};
+#include "srv_config.h"
 
 namespace StateMachine {
 using namespace nuraft;
 class StateMachine : public state_machine {
  public:
-  StateMachine(std::shared_ptr<session::Db> sdb)
-      : last_committed_idx_(0), sdb_(sdb) {}
+  StateMachine(std::shared_ptr<DataStore> ds, std::shared_ptr<session::Db> sdb)
+      : last_committed_idx_(0), sdb_(sdb), ds_(ds) {}
 
   ~StateMachine() {}
 
@@ -91,31 +72,18 @@ class StateMachine : public state_machine {
     when_done(ret, except);
   }
 
-  const std::string& get_content(int session_id, int fh) {
-    auto session = sdb_->find_session(session_id);
-    auto& [meta, content] = data_.at(session->fh_to_key(fh));
-    return content;
-    // if (session->handle_inum(req->fh()) != meta.instance_num)
-    //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
-    // if (!meta.file_exists)
-    //   return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
-    // res->set_content(content);
-    // return Status::OK;
-  }
-
-  auto get_sdb() { return sdb_; }
-
  private:
   ptr<buffer> apply_(action::OpenAction& a) {
     auto session = sdb_->find_session(a.session_id);
-    if (data_.find(a.path) == data_.end()) {
-      data_[a.path];
+    if (ds_->find(a.path) == ds_->end()) {
+      ds_->operator[](a.path);
     }
-    data_[a.path].first.file_exists = true;  // for previously deleted keys
+    ds_->at(a.path).first.file_exists = true;  // for previously deleted keys
     // if (a.subscribe) {
     //   data_[path()].first.subscribers.push_back(session);
     // }
-    auto fh = session->add_new_handle(a.path, data_[a.path].first.instance_num);
+    auto fh =
+        session->add_new_handle(a.path, ds_->at(a.path).first.instance_num);
     action::OpenReturn ret(fh);
     return ret.serialize();
   }
@@ -128,7 +96,7 @@ class StateMachine : public state_machine {
 
   ptr<buffer> apply_(action::SetContentAction& a) {
     auto session = sdb_->find_session(a.session_id);
-    auto& [meta, content] = data_.at(session->fh_to_key(a.fh));
+    auto& [meta, content] = ds_->at(session->fh_to_key(a.fh));
     // if (session->handle_inum(req->fh()) != meta.instance_num)
     //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
     // if (!meta.file_exists)
@@ -146,6 +114,48 @@ class StateMachine : public state_machine {
     return nullptr;
   }
 
+  ptr<buffer> apply_(action::LockAcqAction& a) {
+    auto session = sdb_->find_session(a.session_id);
+    auto key = session->fh_to_key(a.fh);
+    auto& meta = ds_->at(key).first;
+
+    action::Response res;
+
+    // if (session->handle_inum(a.fh) != meta.instance_num)
+    //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
+    {
+      std::lock_guard<std::mutex> guard(meta.mutex);
+      if (!meta.file_exists) {
+        // return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
+        res = {-1, "File does not exist"};
+      }
+
+      if (a.ex) {  // Lock in exclusive mode
+        if (meta.lock_owners.empty()) {
+          meta.lock_owners.insert(session->id);
+          meta.is_locked_ex = true;
+          meta.lock_gen_num++;
+          res = {0, ""};
+        } else {
+          res = {-1, "fail to acquire"};  // fail to acquire
+        }
+      } else {  // Lock in shared mode
+        if (meta.lock_owners.empty() || !meta.is_locked_ex) {
+          if (meta.lock_owners.empty()) {
+            meta.is_locked_ex = false;  // first reader needs to set it
+            meta.lock_gen_num++;
+          }
+          meta.lock_owners.insert(session->id);
+
+          res = {0, ""};
+        } else {
+          res = {-1, "fail to acquire"};  // fail to acquire
+        }
+      }
+    }
+    return res.serialize();
+  }
+
   // Last committed Raft log number.
   std::atomic<uint64_t> last_committed_idx_;
 
@@ -156,6 +166,6 @@ class StateMachine : public state_machine {
   std::mutex last_snapshot_lock_;
 
   std::shared_ptr<session::Db> sdb_;
-  std::unordered_map<std::string, std::pair<FileMetaData, std::string>> data_;
+  std::shared_ptr<DataStore> ds_;
 };
 }  // namespace StateMachine

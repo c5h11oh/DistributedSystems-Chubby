@@ -23,11 +23,12 @@
 #include "srv_config.h"
 
 auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
-               std::shared_ptr<StateMachine::StateMachine> sm) {
+               std::shared_ptr<DataStore> ds,
+               std::shared_ptr<session::Db> sdb) {
   std::string server_address(
       "localhost:" + std::to_string(std::get<1>(SRV_CONFIG[node_id]) + 1));
-  SkinnyImpl service(raft, sm);
-  SkinnyCbImpl cbservice(raft, sm->get_sdb());
+  SkinnyImpl service(raft, ds, sdb);
+  SkinnyCbImpl cbservice(raft, sdb);
   grpc::ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
@@ -46,13 +47,15 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
   return server;
 }
 
-auto init_raft(int node_id,
-               std::shared_ptr<StateMachine::StateMachine> my_state_machine) {
+auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
+               std::shared_ptr<session::Db> sdb) {
   using namespace nuraft;
   const auto [host, port] = SRV_CONFIG[node_id];
   const auto endpoint = host + ":" + std::to_string(port);
   // Replace with your logger, state machine, and state manager.
   ptr<logger> my_logger = nullptr;
+  ptr<state_machine> my_state_machine =
+      cs_new<StateMachine::StateMachine>(ds, sdb);
   ptr<state_mgr> my_state_manager = cs_new<inmem_state_mgr>(node_id, endpoint);
 
   asio_service::options asio_opt;  // your Asio options
@@ -88,11 +91,9 @@ int main(int argc, char **argv) {
   assert(argc >= 2);
   const int node_id = atoi(argv[1]);
   auto sdb = std::make_shared<session::Db>();
-  std::shared_ptr<StateMachine::StateMachine> my_state_machine =
-      std::make_shared<StateMachine::StateMachine>(sdb);
-  auto launcher = init_raft(node_id, my_state_machine);
-  auto server =
-      init_grpc(node_id, launcher.get_raft_server(), my_state_machine);
+  auto datastore = std::make_shared<DataStore>();
+  auto launcher = init_raft(node_id, datastore, sdb);
+  auto server = init_grpc(node_id, launcher.get_raft_server(), datastore, sdb);
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   launcher.shutdown();
