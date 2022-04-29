@@ -1,8 +1,10 @@
 #include <atomic>
+#include <cassert>
 #include <condition_variable>
 #include <queue>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace session {
@@ -31,8 +33,18 @@ class Entry {
   const int &handle_inum(int fh) { return inum.at(fh); }
 
   void enqueue_event(int fh) {
+    emu.lock();
     event_queue.push(fh);
+    emu.unlock();
     ecv.notify_one();
+  }
+
+  int pop_event() {
+    std::lock_guard l(emu);
+    assert(!event_queue.empty());
+    int fh = event_queue.front();
+    event_queue.pop();
+    return fh;
   }
 
   const std::string &fh_to_key(int fh) { return v.at(fh); }

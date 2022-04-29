@@ -3,6 +3,7 @@
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/server_context.h>
 #include <grpcpp/support/server_callback.h>
+#include <grpcpp/support/status.h>
 #include <grpcpp/support/status_code_enum.h>
 #include <grpcpp/support/sync_stream.h>
 #include <signal.h>
@@ -18,8 +19,10 @@
 #include <unordered_set>
 
 #include "StateMachine.cpp"
+#include "async.hxx"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
+#include "srv_config.h"
 
 using grpc::ServerContext;
 using grpc::ServerUnaryReactor;
@@ -32,13 +35,25 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       : raft_(raft), sm_(sm){};
 
  private:
+  Status parse_raft_result(
+      nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>> r) {
+    if (r->get_accepted()) {
+      return Status::OK;
+    } else if (r->get_result_code() == nuraft::NOT_LEADER) {
+      return Status(
+          static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER),
+          std::to_string(raft_->get_leader()));
+    } else {
+      return Status(grpc::StatusCode::ABORTED, "");
+    }
+  };
+
   Status Open(ServerContext *context, const skinny::OpenReq *req,
               skinny::Handle *res) override {
     action::OpenAction action{req};
     auto raft_ret = raft_->append_entries({action.serialize()});
-    if (!raft_ret->get_accepted()) {
-      std::cout << "Open failed (raft)" << std::endl;
-      return Status::CANCELLED;
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
     }
     action::OpenReturn r(*raft_ret->get());
     res->set_fh(r.fh);
@@ -47,7 +62,11 @@ class SkinnyImpl final : public skinny::Skinny::Service {
 
   Status GetContent(ServerContext *context, const skinny::GetContentReq *req,
                     skinny::Content *res) override {
-    if (!raft_->is_leader()) return Status::CANCELLED;
+    if (!raft_->is_leader()) {
+      return Status(
+          static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER),
+          std::to_string(raft_->get_leader()));
+    }
     res->set_content(sm_->get_content(req->session_id(), req->fh()));
     return Status::OK;
   }
@@ -56,9 +75,8 @@ class SkinnyImpl final : public skinny::Skinny::Service {
                     skinny::Empty *) override {
     action::SetContentAction action{req};
     auto raft_ret = raft_->append_entries({action.serialize()});
-    if (!raft_ret->get_accepted()) {
-      std::cout << "SetContent failed (raft)" << std::endl;
-      return Status::CANCELLED;
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
     }
     return Status::OK;
   }
@@ -67,10 +85,8 @@ class SkinnyImpl final : public skinny::Skinny::Service {
                       skinny::SessionId *res) override {
     action::StartSessionAction action;
     auto raft_ret = raft_->append_entries({action.serialize()});
-    if (!raft_ret->get_accepted()) {
-      std::cout << "StartSession failed (raft)" << std::endl;
-      return Status(grpc::StatusCode::CANCELLED,
-                    std::to_string(raft_->get_leader()));
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
     }
     action::StartSessionReturn r(*raft_ret->get());
     res->set_session_id(r.seesion_id);
@@ -93,15 +109,15 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
                                 skinny::Event *res) override {
     ServerUnaryReactor *reactor = context->DefaultReactor();
     if (!raft_->is_leader()) {
-      reactor->Finish(Status(grpc::StatusCode::CANCELLED,
-                             std::to_string(raft_->get_leader())));
+      reactor->Finish(
+          Status(static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER),
+                 std::to_string(raft_->get_leader())));
       return reactor;
     }
     auto session = sdb_->find_session(req->session_id());
     std::cout << "keepalive" << std::endl;
     if (!session->event_queue.empty()) {
-      res->set_fh(session->event_queue.front());
-      session->event_queue.pop();
+      res->set_fh(session->pop_event());
       reactor->Finish(Status::OK);
       return reactor;
     }
@@ -114,7 +130,7 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
           if (session->ecv.wait_for(lk, 1s, [session]() {
                 return !session->event_queue.empty();
               })) {
-            res->set_fh(session->event_queue.front());
+            res->set_fh(session->pop_event());
             session->event_queue.pop();
           }
           reactor->Finish(Status::OK);
