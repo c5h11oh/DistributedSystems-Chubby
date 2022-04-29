@@ -51,7 +51,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   Status Open(ServerContext *context, const skinny::OpenReq *req,
               skinny::Handle *res) override {
     auto session = sdb->find_session(req->session_id());
-    if (data.find(req->path()) == data.end()) {
+    if (data.contains(req->path())) {
       data[req->path()];
     }
     data[req->path()].first.file_exists = true;  // for previously deleted keys
@@ -225,8 +225,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto session = sdb->find_session(session_id);
     if (session->handle_inum(fh) == -1) return;  // handle already closed
     auto &meta = data.at(session->fh_to_key(fh)).first;
-    if (meta.lock_owners.find(session_id) != meta.lock_owners.end())
-      unlock(session_id, meta);
+    if (meta.lock_owners.contains(session_id)) unlock(session_id, meta);
     session->close_handle(fh);
   }
 
