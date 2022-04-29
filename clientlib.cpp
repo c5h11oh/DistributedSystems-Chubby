@@ -42,12 +42,14 @@ class SkinnyClient {
   int Open(const std::string &path,
            const std::optional<std::function<void()>> &cb = std::nullopt) {
     skinny::OpenReq req;
-    ClientContext context;
     skinny::Handle res;
     req.set_path(path);
     req.set_session_id(session_id);
     req.set_subscribe(cb.has_value());
-    auto status = stub_->Open(&context, req, &res);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->Open(&context, req, &res);
+    });
     assert(status.ok());
     auto fh = res.fh();
     if (cb) {
@@ -62,7 +64,10 @@ class SkinnyClient {
     skinny::Content res;
     req.set_session_id(session_id);
     req.set_fh(fh);
-    auto status = stub_->GetContent(&context, req, &res);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->GetContent(&context, req, &res);
+    });
     assert(status.ok());
     return res.content();
   }
@@ -74,7 +79,10 @@ class SkinnyClient {
     req.set_session_id(session_id);
     req.set_content(content);
     req.set_fh(fh);
-    auto status = stub_->SetContent(&context, req, &res);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->SetContent(&context, req, &res);
+    });
     assert(status.ok());
   }
 
@@ -85,7 +93,10 @@ class SkinnyClient {
     req.set_session_id(session_id);
     req.set_fh(fh);
     req.set_ex(ex);
-    auto status = stub_->TryAcquire(&context, req, &res);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->TryAcquire(&context, req, &res);
+    });
     assert(status.ok());
     return (res.res() == 0);
   }
@@ -97,7 +108,10 @@ class SkinnyClient {
     req.set_session_id(session_id);
     req.set_fh(fh);
     req.set_ex(ex);
-    auto status = stub_->Acquire(&context, req, &res);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->Acquire(&context, req, &res);
+    });
     assert(status.ok());
     return (res.res() == 0);
   }
@@ -108,11 +122,27 @@ class SkinnyClient {
     skinny::Response res;
     req.set_session_id(session_id);
     req.set_fh(fh);
-    auto status = stub_->Release(&context, req, &res);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->Release(&context, req, &res);
+    });
     assert(status.ok());
   }
 
  private:
+  grpc::Status InvokeRpc(std::function<grpc::Status()> &&fun) {
+    while (true) {
+      while (has_conn_.load() == 0) has_conn_.wait(0);
+      ClientContext context;
+      grpc::Status status = std::invoke(fun);
+      if (!(status.error_code() ==
+                static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER) ||
+            status.error_code() == grpc::StatusCode::UNAVAILABLE)) {
+        return status;
+      }
+    }
+  }
+
   void KeepAlive() {
     using namespace std::chrono_literals;
     skinny::SessionId req;
@@ -134,7 +164,12 @@ class SkinnyClient {
       if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
         std::invoke(it->second);
       }
+      if (has_conn_.load() == 0) {
+        has_conn_ = 1;
+        has_conn_.notify_all();
+      }
     } else {
+      has_conn_ = 0;
       int next_server_id = cur_srv_id + 1;
       if (status.error_code() == grpc::StatusCode::CANCELLED) {
         if (auto new_leader = std::stoi(status.error_message());
@@ -157,6 +192,7 @@ class SkinnyClient {
       auto status = stub_->StartSession(&context, req, &res);
       if (status.ok()) {
         session_id = res.session_id();
+        has_conn_ = true;
         std::cerr << "session id: " << session_id << std::endl;
         return;
       }
@@ -183,5 +219,7 @@ class SkinnyClient {
   std::unique_ptr<skinny::Skinny::Stub> stub_;
   std::unique_ptr<skinny::SkinnyCb::Stub> stub_cb_;
   int session_id;
+  std::atomic<bool> has_conn_;
+
   std::thread kathread;
 };
