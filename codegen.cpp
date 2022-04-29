@@ -78,18 +78,24 @@ void gen_code(const std::string& action_name,
            action_name.c_str());
   }
   for (auto& f : fields) std::cout << f->gen_decl() << ';' << std::endl;
-  printf("explicit %s(", action_name.c_str());
-  for (int i = 0; i < fields.size(); i++) {
-    if (i != 0) putchar(',');
-    std::cout << fields[i]->gen_decl();
+  // printf("explicit %s(", action_name.c_str());
+
+  printf("%s() {}\n", action_name.c_str());
+  if (!fields.empty()) {
+    printf("%s(", action_name.c_str());
+    for (int i = 0; i < fields.size(); i++) {
+      if (i != 0) putchar(',');
+      std::cout << fields[i]->gen_decl();
+    }
+    putchar(')');
+    if (!fields.empty()) putchar(':');
+    for (int i = 0; i < fields.size(); i++) {
+      if (i != 0) putchar(',');
+      printf("%s(%s)", fields[i]->name.c_str(), fields[i]->name.c_str());
+    }
+    puts("{}");
   }
-  putchar(')');
-  if (!fields.empty()) putchar(':');
-  for (int i = 0; i < fields.size(); i++) {
-    if (i != 0) putchar(',');
-    printf("%s(%s)", fields[i]->name.c_str(), fields[i]->name.c_str());
-  }
-  puts("{}");
+
   puts("template <typename T>");
   printf("%s(const T* t) {\n", action_name.c_str());
   for (int i = 0; i < fields.size(); i++) {
