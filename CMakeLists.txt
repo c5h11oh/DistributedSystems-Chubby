@@ -69,14 +69,17 @@ pybind11_add_module(pyclientlib pyclientlib.cpp ${PROTOBUF_DST})
 target_include_directories(pyclientlib PRIVATE ${pybind11_SOURCE_DIR}/include)
 target_link_libraries(pyclientlib PUBLIC grpc++)
 
-add_executable(client client.cpp ${PROTOBUF_DST})
-target_link_libraries(client grpc++)
+add_library(clientlib SHARED clientlib.cpp ${PROTOBUF_DST})
+target_link_libraries(clientlib grpc++)
 
-add_executable(client2 client2.cpp ${PROTOBUF_DST})
-target_link_libraries(client2 grpc++)
+add_executable(client client.cpp)
+target_link_libraries(client clientlib)
 
-add_executable(client_sub client_sub.cpp ${PROTOBUF_DST})
-target_link_libraries(client_sub grpc++)
+add_executable(client2 client2.cpp)
+target_link_libraries(client2 clientlib)
+
+add_executable(client_sub client_sub.cpp)
+target_link_libraries(client_sub clientlib)
 
 add_executable(codegen codegen.cpp)
 target_link_libraries(codegen libprotobuf)
