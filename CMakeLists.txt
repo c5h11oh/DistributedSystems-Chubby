@@ -29,7 +29,7 @@ fetchcontent_declare(
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11
-    GIT_TAG        v2.2.3
+    GIT_TAG        v2.9.2
 )
 
 set(gRPC_SSL_PROVIDER package)
