@@ -1,7 +1,7 @@
 #include <iostream>
 #include <thread>
 
-#include "clientlib.cpp"
+#include "clientlib.h"
 using namespace std::chrono_literals;
 
 int main(int argc, char *argv[]) {

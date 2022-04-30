@@ -1,3 +1,4 @@
+#include "clientlib.h"
 
 #include <fcntl.h>
 #include <grpcpp/client_context.h>
@@ -24,12 +25,11 @@
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
 #include "srv_config.h"
-
 using grpc::ClientContext;
 
-class SkinnyClient {
+class SkinnyClient::impl {
  public:
-  SkinnyClient()
+  impl()
       : kathread(std::invoke(([this]() {
           StartSessionOrDie();
           return [this]() {
@@ -223,3 +223,19 @@ class SkinnyClient {
 
   std::thread kathread;
 };
+
+SkinnyClient::SkinnyClient() { pImpl = std::make_unique<impl>(); };
+SkinnyClient::~SkinnyClient() = default;
+int SkinnyClient::Open(const std::string &path,
+                       const std::optional<std::function<void()>> &cb) {
+  return pImpl->Open(path, cb);
+};
+std::string SkinnyClient::GetContent(int fh) { return pImpl->GetContent(fh); };
+void SkinnyClient::SetContent(int fh, const std::string &content) {
+  return pImpl->SetContent(fh, content);
+}
+bool SkinnyClient::TryAcquire(int fh, bool ex) {
+  return pImpl->TryAcquire(fh, ex);
+}
+void SkinnyClient::Release(int fh) { return pImpl->Release(fh); }
+bool SkinnyClient::Acquire(int fh, bool ex) { return pImpl->Acquire(fh, ex); }
