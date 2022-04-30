@@ -26,10 +26,15 @@ fetchcontent_declare(
   GIT_TAG asio-1-22-1
 )
 
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11
+    GIT_TAG        v2.2.3
+)
+
 set(gRPC_SSL_PROVIDER package)
 set(FETCHCONTENT_QUIET OFF)
-fetchcontent_makeavailable(gRPC)
-fetchcontent_makeavailable(asio)
+fetchcontent_makeavailable(gRPC asio pybind11)
 set(ASIO_INCLUDE_DIR ${asio_SOURCE_DIR}/asio/include)
 fetchcontent_makeavailable(nuraft)
 
@@ -59,6 +64,10 @@ add_custom_command(
   ${PROTOBUF_ABS_SRC}
   DEPENDS ${PROTOBUF_SRC} protoc grpc_cpp_plugin grpc++_reflection
 )
+
+pybind11_add_module(pyclientlib pyclientlib.cpp ${PROTOBUF_DST})
+target_include_directories(pyclientlib PRIVATE ${pybind11_SOURCE_DIR}/include)
+target_link_libraries(pyclientlib PUBLIC grpc++)
 
 add_executable(client client.cpp ${PROTOBUF_DST})
 target_link_libraries(client grpc++)
