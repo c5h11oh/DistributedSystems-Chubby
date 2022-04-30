@@ -7,13 +7,13 @@ using namespace std::chrono_literals;
 int main(int argc, char *argv[]) {
   using namespace std::chrono_literals;
   SkinnyClient skinny;
-  int fh = skinny.Open("apple");
-  skinny.SetContent(fh, "hello world");
-  std::cout << skinny.GetContent(fh) << std::endl;
+  // int fh = skinny.Open("apple");
+  // skinny.SetContent(fh, "hello world");
+  // std::cout << skinny.GetContent(fh) << std::endl;
 
-  int fh2 = skinny.Open("banana");
-  skinny.SetContent(fh2, "hello banana");
-  std::cout << skinny.GetContent(fh2) << std::endl;
+  // int fh2 = skinny.Open("banana");
+  // skinny.SetContent(fh2, "hello banana");
+  // std::cout << skinny.GetContent(fh2) << std::endl;
 
   // if (skinny.Acquire(fh2, true))
   //   std::cout << "Got fh2 ex lock\n";

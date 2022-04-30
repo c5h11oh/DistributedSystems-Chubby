@@ -20,6 +20,7 @@
 
 #include "StateMachine.cpp"
 #include "async.hxx"
+#include "includes/action.pb.h"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
 #include "srv_config.h"
@@ -51,13 +52,17 @@ class SkinnyImpl final : public skinny::Skinny::Service {
 
   Status Open(ServerContext *context, const skinny::OpenReq *req,
               skinny::Handle *res) override {
-    action::OpenAction action{req};
-    auto raft_ret = raft_->append_entries({action.serialize()});
+    action::Action action;
+    action::OpenAction open_action;
+    open_action.set_path(req->path());
+    open_action.set_session_id(req->session_id());
+    action.set_allocated_open_action(&open_action);
+    auto raft_ret = raft_->append_entries({action::serialize(action)});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
-    action::OpenReturn r(*raft_ret->get());
-    res->set_fh(r.fh);
+    auto r = action::deserialize_to_res(*raft_ret->get()).open_return();
+    res->set_fh(r.fh());
     return Status::OK;
   }
 
@@ -77,8 +82,13 @@ class SkinnyImpl final : public skinny::Skinny::Service {
 
   Status SetContent(ServerContext *context, const skinny::SetContentReq *req,
                     skinny::Empty *) override {
-    action::SetContentAction action{req};
-    auto raft_ret = raft_->append_entries({action.serialize()});
+    action::Action action;
+    action::SetContentAction set_content_action;
+    set_content_action.set_session_id(req->session_id());
+    set_content_action.set_fh(req->fh());
+    set_content_action.set_content(req->content());
+    action.set_allocated_set_content_action(&set_content_action);
+    auto raft_ret = raft_->append_entries({action::serialize(action)});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
@@ -87,13 +97,17 @@ class SkinnyImpl final : public skinny::Skinny::Service {
 
   Status StartSession(ServerContext *context, const skinny::Empty *,
                       skinny::SessionId *res) override {
-    action::StartSessionAction action;
-    auto raft_ret = raft_->append_entries({action.serialize()});
+    action::Action action;
+    action::StartSessionAction *start_session_action =
+        new action::StartSessionAction();
+    action.set_allocated_start_session_action(start_session_action);
+    auto raft_ret = raft_->append_entries({action::serialize(action)});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
-    action::StartSessionReturn r(*raft_ret->get());
-    res->set_session_id(r.seesion_id);
+    action::StartSessionReturn r =
+        action::deserialize_to_res(*raft_ret->get()).start_session_return();
+    res->set_session_id(r.seesion_id());
     return Status::OK;
   }
 

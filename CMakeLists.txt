@@ -34,7 +34,7 @@ set(ASIO_INCLUDE_DIR ${asio_SOURCE_DIR}/asio/include)
 fetchcontent_makeavailable(nuraft)
 
 
-set(PROTOBUF_SRC "protos/skinny.proto")
+file(GLOB PROTOBUF_SRC "protos/*")
 set(PROTOBUF_DST "")
 set(PROTOBUF_ABS_SRC "")
 set(PROTOBUF_EXT ".grpc.pb.cc" ".grpc.pb.h" ".pb.cc" ".pb.h")
@@ -45,9 +45,8 @@ foreach(file ${PROTOBUF_SRC})
     string(APPEND fileh ${ext})
     list(APPEND PROTOBUF_DST ${fileh})
   endforeach()
-  list(APPEND PROTOBUF_ABS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/${file}")
+  list(APPEND PROTOBUF_ABS_SRC ${file})
 endforeach()
-
 
 add_custom_command(
   OUTPUT ${PROTOBUF_DST}
@@ -69,21 +68,10 @@ target_link_libraries(client2 grpc++)
 add_executable(client_sub client_sub.cpp ${PROTOBUF_DST})
 target_link_libraries(client_sub grpc++)
 
-add_executable(codegen codegen.cpp)
-target_link_libraries(codegen libprotobuf)
-target_include_directories(codegen PUBLIC ${grpc_SOURCE_DIR}/third_party/protobuf/src)
-
-add_custom_target(
-  action
-  COMMAND ${CMAKE_CURRENT_BINARY_DIR}/codegen ${CMAKE_CURRENT_SOURCE_DIR}/protos/raft.proto > ${CMAKE_CURRENT_SOURCE_DIR}/includes/action.cpp
-  DEPENDS codegen ${CMAKE_CURRENT_SOURCE_DIR}/protos/raft.proto
-)
-
 find_package(OpenSSL REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 add_executable(server server.cpp ${nuraft_SOURCE_DIR}/examples/in_memory_log_store.cxx ${PROTOBUF_DST})
-add_dependencies(server action)
 target_include_directories(server PUBLIC ${nuraft_SOURCE_DIR}/include)
 target_include_directories(server PUBLIC ${nuraft_SOURCE_DIR}/include/libnuraft)
 target_include_directories(server PUBLIC ${nuraft_SOURCE_DIR}/examples)

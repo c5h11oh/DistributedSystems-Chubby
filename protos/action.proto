@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package action;
+
+message OpenAction {
+  int64 session_id = 1;
+  string path = 2;
+}
+
+message StartSessionAction {
+
+}
+
+message LockAcqAction {
+  int64 session_id = 1;
+  int32 fh = 2;
+  int32 ex = 3;
+}
+
+message SimpleRes {
+  int32 res = 1;
+  optional string msg = 2;
+}
+
+message SetContentAction {
+    int64 session_id = 1;
+    int32 fh = 2;
+    string content = 3;
+}
+
+message OpenReturn {
+  int32 fh = 1;
+}
+
+message StartSessionReturn {
+  int64 seesion_id = 1;
+}
+
+message Action {
+    oneof action {
+        OpenAction open_action = 1;
+        StartSessionAction start_session_action = 2;
+        LockAcqAction lock_acq_action = 3;
+        SetContentAction set_content_action = 4;
+      }
+  }
+
+message Response{
+    oneof response {
+        OpenReturn open_return = 1;
+        SimpleRes simple_res= 2;
+        StartSessionReturn start_session_return = 3;
+      }
+  }
