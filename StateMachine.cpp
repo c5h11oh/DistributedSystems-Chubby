@@ -229,7 +229,7 @@ class StateMachine : public state_machine {
     auto& [meta, content] = ds_->at(session->fh_to_key(fh));
     bool need_notify, released;
     {
-      std::lock_guard(meta.mutex);
+      std::lock_guard lg(meta.mutex);
       if (!meta.file_exists) return -2;
       released = meta.lock_owners.erase(session_id);
       std::cout << "sess " << session_id << " rel lock @ "

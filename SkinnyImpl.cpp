@@ -186,25 +186,7 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
     }
     auto session = sdb_->find_session(req->session_id());
     std::cout << "keepalive" << std::endl;
-    if (!session->event_queue.empty()) {
-      res->set_fh(session->pop_event());
-      reactor->Finish(Status::OK);
-      return reactor;
-    }
-    if (session->kathread && session->kathread->joinable())
-      session->kathread->join();
-    session->kathread =
-        std::make_unique<std::thread>([reactor, session, res]() {
-          using namespace std::chrono_literals;
-          std::unique_lock<std::mutex> lk(session->emu);
-          if (session->ecv.wait_for(lk, 1s, [session]() {
-                return !session->event_queue.empty();
-              })) {
-            res->set_fh(session->pop_event());
-            session->event_queue.pop();
-          }
-          reactor->Finish(Status::OK);
-        });
+    session->setup_kathread(reactor, res);
     return reactor;
   }
 
