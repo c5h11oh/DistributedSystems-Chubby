@@ -18,5 +18,6 @@ PYBIND11_MODULE(pyclientlib, m) {
       .def("GetContent", &SkinnyClient::GetContent)
       .def("TryAcquire", &SkinnyClient::TryAcquire)
       .def("Acquire", &SkinnyClient::Acquire)
-      .def("Release", &SkinnyClient::Release);
+      .def("Release", &SkinnyClient::Release)
+      .def("Delete", &SkinnyClient::Delete);
 }

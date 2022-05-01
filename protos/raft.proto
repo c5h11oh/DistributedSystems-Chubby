@@ -48,3 +48,8 @@ message OpenReturn {
 message StartSessionReturn {
   int64 session_id = 1;
 }
+
+message DeleteAction {
+  int64 session_id = 1;
+  int32 fh = 2;
+}

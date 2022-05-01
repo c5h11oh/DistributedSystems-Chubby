@@ -1,31 +1,24 @@
 #pragma once
 
+#include <grpcpp/grpcpp.h>
+
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
+#include <optional>
 #include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
+#include "includes/skinny.pb.h"
 namespace session {
 class Entry {
  public:
   int id;
 
-  std::unique_ptr<std::thread> kathread;
-  std::condition_variable ecv;
-  std::mutex emu;
-  std::queue<int> event_queue;  // queue<fh>
-
   Entry() { id = next_id.fetch_add(1, std::memory_order_relaxed); }
-
-  ~Entry() {
-    if (kathread && kathread->joinable()) kathread->join();
-    // TODO: duplicate join...
-    // kathread.reset(nullptr);
-  }
 
   int add_new_handle(std::string path, int instance_num) {
     v.push_back(path);
@@ -37,26 +30,49 @@ class Entry {
   const int &handle_inum(int fh) { return inum.at(fh); }
 
   void enqueue_event(int fh) {
-    emu.lock();
-    event_queue.push(fh);
-    emu.unlock();
-    ecv.notify_one();
-  }
-
-  int pop_event() {
-    std::lock_guard l(emu);
-    assert(!event_queue.empty());
-    int fh = event_queue.front();
-    event_queue.pop();
-    return fh;
+    {
+      std::lock_guard l(event_queue_lock);
+      event_queue.push(fh);
+    }
+    if (kathread) kathread->request_stop();
   }
 
   const std::string &fh_to_key(int fh) { return v.at(fh); }
+
+  void setup_kathread(grpc::ServerUnaryReactor *reactor, skinny::Event *res) {
+    if (!event_queue.empty()) {
+      res->set_fh(pop_event());
+      reactor->Finish(grpc::Status::OK);
+      return;
+    }
+    kathread = std::jthread([this, reactor, res](std::stop_token stoken) {
+      using namespace std::chrono_literals;
+      std::mutex mutex;
+      std::unique_lock lk(mutex);
+      if (std::condition_variable_any().wait_for(
+              lk, stoken, 1s, [this]() { return !event_queue.empty(); })) {
+        res->set_fh(pop_event());
+        event_queue.pop();
+      }
+      reactor->Finish(grpc::Status::OK);
+    });
+  }
 
  private:
   std::vector<std::string> v;
   std::vector<int> inum;  // instance_num
   static std::atomic<int> inline next_id{0};
+  std::queue<int> event_queue;  // queue<fh>
+  std::optional<std::jthread> kathread;
+  std::mutex event_queue_lock;
+
+  int pop_event() {
+    std::lock_guard l(event_queue_lock);
+    assert(!event_queue.empty());
+    int fh = event_queue.front();
+    event_queue.pop();
+    return fh;
+  }
 };
 
 class Db {

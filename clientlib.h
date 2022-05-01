@@ -21,6 +21,7 @@ class SkinnyClient {
   bool TryAcquire(int fh, bool ex);
   bool Acquire(int fh, bool ex);
   void Release(int fh);
+  void Delete(int fh);
 
  private:
   class impl;

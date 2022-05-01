@@ -229,7 +229,7 @@ class StateMachine : public state_machine {
     auto& [meta, content] = ds_->at(session->fh_to_key(fh));
     bool need_notify, released;
     {
-      std::lock_guard(meta.mutex);
+      std::lock_guard lg(meta.mutex);
       if (!meta.file_exists) return -2;
       released = meta.lock_owners.erase(session_id);
       std::cout << "sess " << session_id << " rel lock @ "
@@ -241,6 +241,30 @@ class StateMachine : public state_machine {
       // should acquire the lock
     }
     return released ? 0 : -1;
+  }
+
+  ptr<buffer> apply_(action::DeleteAction& a) {
+    auto session = sdb_->find_session(a.session_id);
+    auto key = session->fh_to_key(a.fh);
+    auto& [meta, content] = ds_->at(key);
+
+    content.clear();
+    {
+      std::lock_guard<std::mutex> guard(meta.mutex);
+      meta.file_exists = false;
+      meta.instance_num++;
+      meta.content_gen_num = 0;
+      meta.lock_gen_num = 0;
+      for (const int &session_id : meta.lock_owners) {
+        session = sdb_->find_session(session_id);
+        session->enqueue_event(a.fh);
+      }
+      meta.lock_owners.clear();
+    }
+    meta.cv.notify_all();
+
+    action::Response res({0, ""});
+    return res.serialize();
   }
 
   // Last committed Raft log number.

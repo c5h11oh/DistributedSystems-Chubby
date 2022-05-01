@@ -148,6 +148,19 @@ class SkinnyClient::impl {
     assert(status.ok());
   }
 
+  void Delete(int fh) {
+    skinny::DeleteReq req;
+    ClientContext context;
+    skinny::Response res;
+    req.set_session_id(session_id);
+    req.set_fh(fh);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->Delete(&context, req, &res);
+    });
+    assert(status.ok());
+  }
+
  private:
   grpc::Status InvokeRpc(std::function<grpc::Status()> &&fun) {
     while (true) {
@@ -258,3 +271,4 @@ bool SkinnyClient::TryAcquire(int fh, bool ex) {
 void SkinnyClient::Release(int fh) { return pImpl->Release(fh); }
 bool SkinnyClient::Acquire(int fh, bool ex) { return pImpl->Acquire(fh, ex); }
 void SkinnyClient::Close(int fh) { return pImpl->Close(fh); }
+void SkinnyClient::Delete(int fh) { return pImpl->Delete(fh); }
