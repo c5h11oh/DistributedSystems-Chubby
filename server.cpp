@@ -61,6 +61,7 @@ auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
   asio_service::options asio_opt;  // your Asio options
   raft_params params;              // your Raft parameters
   params.return_method_ = raft_params::blocking;
+  params.client_req_timeout_ = INT_MAX;
 
   raft_launcher launcher;
   ptr<raft_server> server = launcher.init(my_state_machine, my_state_manager,

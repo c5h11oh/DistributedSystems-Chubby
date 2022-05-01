@@ -61,6 +61,16 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     return Status::OK;
   }
 
+  Status Close(ServerContext *context, const skinny::CloseReq *req,
+               skinny::Empty *) override {
+    action::CloseAction action{req->session_id(), req->fh()};
+    auto raft_ret = raft_->append_entries({action.serialize()});
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
+    }
+    return Status::OK;
+  }
+
   Status GetContent(ServerContext *context, const skinny::GetContentReq *req,
                     skinny::Content *res) override {
     if (!raft_->is_leader()) {
@@ -93,20 +103,63 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       return status;
     }
     action::StartSessionReturn r(*raft_ret->get());
-    res->set_session_id(r.seesion_id);
+    res->set_session_id(r.session_id);
+    return Status::OK;
+  }
+
+  Status EndSession(ServerContext *context, const skinny::SessionId *req,
+                    skinny::Empty *) override {
+    action::EndSessionAction action(req->session_id());
+    auto raft_ret = raft_->append_entries({action.serialize()});
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
+    }
     return Status::OK;
   }
 
   Status TryAcquire(ServerContext *context, const skinny::LockAcqReq *req,
                     skinny::Response *res) override {
-    // action::LockAcqAction action;
-    // auto raft_ret = raft_->append_entries({action.serialize()});
-    // if (auto status = parse_raft_result(raft_ret); !status.ok()) {
-    //   return status;
-    // }
-    // action::StartSessionReturn r(*raft_ret->get());
-    // res->set_session_id(r.seesion_id);
-    // return Status::OK;
+    action::AcqAction action(req->session_id(), req->fh(), req->ex(), 0);
+    auto raft_ret = raft_->append_entries({action.serialize()});
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
+    }
+    action::Response sm_result(*raft_ret->get());
+    if (sm_result.res == -1)
+      return Status(
+          static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
+          sm_result.msg);
+    return Status::OK;
+  }
+
+  Status Acquire(ServerContext *context, const skinny::LockAcqReq *req,
+                 skinny::Response *res) override {
+    action::AcqAction action(req->session_id(), req->fh(), req->ex(), 1);
+    auto raft_ret = raft_->append_entries({action.serialize()});
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
+    }
+    action::Response sm_result(*raft_ret->get());
+    if (sm_result.res == -1)
+      return Status(
+          static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
+          sm_result.msg);
+    return Status::OK;
+  }
+
+  Status Release(ServerContext *context, const skinny::LockRelReq *req,
+                 skinny::Response *res) override {
+    action::RelAction action(req->session_id(), req->fh());
+    auto raft_ret = raft_->append_entries({action.serialize()});
+    if (auto status = parse_raft_result(raft_ret); !status.ok()) {
+      return status;
+    }
+    action::Response sm_result(*raft_ret->get());
+    if (sm_result.res < 0)
+      return Status(
+          static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
+          sm_result.msg);
+    return Status::OK;
   }
 
   std::shared_ptr<nuraft::raft_server> raft_;

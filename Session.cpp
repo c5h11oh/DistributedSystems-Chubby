@@ -23,6 +23,8 @@ class Entry {
 
   ~Entry() {
     if (kathread && kathread->joinable()) kathread->join();
+    // TODO: duplicate join...
+    // kathread.reset(nullptr);
   }
 
   int add_new_handle(std::string path, int instance_num) {

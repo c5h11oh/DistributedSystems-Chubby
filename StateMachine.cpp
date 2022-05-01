@@ -88,10 +88,28 @@ class StateMachine : public state_machine {
     return ret.serialize();
   }
 
+  ptr<buffer> apply_(action::CloseAction& a) {
+    auto session = sdb_->find_session(a.session_id);
+    session->close_handle(a.fh);
+    release_lock(a.session_id, a.fh);
+    return nullptr;
+  }
+
   ptr<buffer> apply_(action::StartSessionAction& a) {
     auto session = sdb_->create_session();
     action::StartSessionReturn ret(session->id);
     return ret.serialize();
+  }
+
+  ptr<buffer> apply_(action::EndSessionAction& a) {
+    auto session = sdb_->find_session(a.session_id);
+    for (int i = 0; i < session->handle_count(); ++i) {
+      // does not matter as we are deleting session
+      // session->close_handle(i);
+      release_lock(a.session_id, i);
+    }
+    sdb_->delete_session(a.session_id);
+    return nullptr;
   }
 
   ptr<buffer> apply_(action::SetContentAction& a) {
@@ -113,21 +131,50 @@ class StateMachine : public state_machine {
     // }
     return nullptr;
   }
-
-  ptr<buffer> apply_(action::LockAcqAction& a) {
+  ptr<buffer> apply_(action::AcqAction& a) {
     auto session = sdb_->find_session(a.session_id);
     auto key = session->fh_to_key(a.fh);
     auto& meta = ds_->at(key).first;
 
     action::Response res;
 
-    // if (session->handle_inum(a.fh) != meta.instance_num)
-    //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
+    if (session->handle_inum(a.fh) != meta.instance_num)
+      return action::Response(-1, "Instance num mismatch").serialize();
+    if (a.blocking)  // Acquire
     {
+      puts("Called Acquire");
+      std::unique_lock<std::mutex> ulock(meta.mutex);
+      if (a.ex) {  // Lock in exclusive mode
+        puts("Lock is EX mode");
+        meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
+        puts("Exit cv wait");
+        if (!meta.file_exists)
+          return action::Response(-1, "File does not exist").serialize();
+        meta.lock_owners.insert(session->id);
+        meta.is_locked_ex = true;
+        meta.lock_gen_num++;
+      } else {  // Lock in shared mode
+        puts("Lock is SH mode");
+        meta.cv.wait(ulock, [&] {
+          return meta.lock_owners.empty() || !meta.is_locked_ex;
+        });
+        if (!meta.file_exists)
+          return action::Response(-1, "File does not exist").serialize();
+        if (meta.lock_owners.empty()) {
+          meta.is_locked_ex = false;
+          meta.lock_gen_num++;
+        }
+        meta.lock_owners.insert(session->id);
+      }
+      puts("Successfully get lock");
+      return action::Response(0, "").serialize();
+    } else {  // TryAcquire
+      puts("Called TryAcquire");
       std::lock_guard<std::mutex> guard(meta.mutex);
       if (!meta.file_exists) {
         // return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
-        res = {-1, "File does not exist"};
+        puts("Failed to get lock");
+        return action::Response(-1, "File does not exist").serialize();
       }
 
       if (a.ex) {  // Lock in exclusive mode
@@ -135,9 +182,11 @@ class StateMachine : public state_machine {
           meta.lock_owners.insert(session->id);
           meta.is_locked_ex = true;
           meta.lock_gen_num++;
-          res = {0, ""};
+          puts("Successfully get lock");
+          return action::Response(0, "").serialize();
         } else {
-          res = {-1, "fail to acquire"};  // fail to acquire
+          puts("Failed to get lock");
+          return action::Response(-1, "fail to acquire").serialize();
         }
       } else {  // Lock in shared mode
         if (meta.lock_owners.empty() || !meta.is_locked_ex) {
@@ -147,13 +196,51 @@ class StateMachine : public state_machine {
           }
           meta.lock_owners.insert(session->id);
 
-          res = {0, ""};
+          puts("Successfully get lock");
+          return action::Response(0, "").serialize();
         } else {
-          res = {-1, "fail to acquire"};  // fail to acquire
+          puts("Failed to get lock");
+          return action::Response(-1, "fail to acquire").serialize();
         }
       }
     }
     return res.serialize();
+  }
+
+  ptr<buffer> apply_(action::RelAction& a) {
+    int rc = release_lock(a.session_id, a.fh);
+    if (rc == -2)
+      return action::Response(-2, "file not found").serialize();
+    else if (rc == -1)
+      return action::Response(-1, "the session does not hold this lock")
+          .serialize();
+    else if (rc == 0)
+      return action::Response(0, "").serialize();
+    else
+      assert(false);
+  }
+
+  // return: whether a lock is released.
+  // -2: file not found
+  // -1: the session does not hold this lock
+  // 0: release succeed
+  int release_lock(int session_id, int fh) {
+    auto session = sdb_->find_session(session_id);
+    auto& [meta, content] = ds_->at(session->fh_to_key(fh));
+    bool need_notify, released;
+    {
+      std::lock_guard(meta.mutex);
+      if (!meta.file_exists) return -2;
+      released = meta.lock_owners.erase(session_id);
+      std::cout << "sess " << session_id << " rel lock @ "
+                << session->fh_to_key(fh) << ": " << std::boolalpha << released
+                << std::endl;
+    }
+    if (need_notify) {
+      meta.cv.notify_all();  // If a EX lock is released, *all* waiting SH reqs
+      // should acquire the lock
+    }
+    return released ? 0 : -1;
   }
 
   // Last committed Raft log number.

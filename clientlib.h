@@ -15,6 +15,7 @@ class SkinnyClient {
 
   int Open(const std::string &path,
            const std::optional<std::function<void()>> &cb = std::nullopt);
+  void Close(int fh);
   std::string GetContent(int fh);
   void SetContent(int fh, const std::string &content);
   bool TryAcquire(int fh, bool ex);

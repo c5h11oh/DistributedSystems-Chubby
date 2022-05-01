@@ -11,7 +11,7 @@ static const std::vector<std::tuple<std::string, int>> SRV_CONFIG{
     {"localhost", 10000}, {"localhost", 10010}, {"localhost", 10020}};
 
 namespace skinny {
-enum class ErrorCode { NOT_LEADER = 100 };
+enum class ErrorCode { NOT_LEADER = 100, LOCK_RELATED = 101 };
 }
 
 class FileMetaData {

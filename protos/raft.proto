@@ -5,14 +5,29 @@ message OpenAction {
   string path = 2;
 }
 
+message CloseAction {
+  int64 session_id = 1;
+  int32 fh = 2;
+}
+
 message StartSessionAction {
 
 }
 
-message LockAcqAction {
+message EndSessionAction {
+  int64 session_id = 1;
+}
+
+message AcqAction {
   int64 session_id = 1;
   int32 fh = 2;
   int32 ex = 3;
+  int32 blocking = 4;
+}
+
+message RelAction {
+  int64 session_id = 1;
+  int32 fh = 2;
 }
 
 message Response {
@@ -31,5 +46,5 @@ message OpenReturn {
 }
 
 message StartSessionReturn {
-  int64 seesion_id = 1;
+  int64 session_id = 1;
 }
