@@ -32,7 +32,7 @@ FetchContent_Declare(
     GIT_TAG        v2.9.2
 )
 
-set(gRPC_SSL_PROVIDER package)
+set(gRPC_SSL_PROVIDER package CACHE STRING "")
 set(FETCHCONTENT_QUIET OFF)
 fetchcontent_makeavailable(gRPC asio pybind11)
 set(ASIO_INCLUDE_DIR ${asio_SOURCE_DIR}/asio/include)
