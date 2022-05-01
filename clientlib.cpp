@@ -39,6 +39,14 @@ class SkinnyClient::impl {
           };
         }))) {}
 
+  ~impl() {
+    ClientContext context;
+    skinny::SessionId req;
+    skinny::Empty res;
+    req.set_session_id(session_id);
+    stub_->EndSession(&context, req, &res);
+  }
+
   int Open(const std::string &path,
            const std::optional<std::function<void()>> &cb = std::nullopt) {
     skinny::OpenReq req;
@@ -56,6 +64,17 @@ class SkinnyClient::impl {
       callbacks[fh] = cb.value();
     }
     return fh;
+  }
+
+  void Close(int fh) {
+    skinny::CloseReq req;
+    skinny::Empty res;
+    req.set_session_id(session_id);
+    req.set_fh(fh);
+    auto status = InvokeRpc([&]() {
+      ClientContext context;
+      return stub_->Close(&context, req, &res);
+    });
   }
 
   std::string GetContent(int fh) {
@@ -133,7 +152,6 @@ class SkinnyClient::impl {
   grpc::Status InvokeRpc(std::function<grpc::Status()> &&fun) {
     while (true) {
       while (has_conn_.load() == 0) has_conn_.wait(0);
-      ClientContext context;
       grpc::Status status = std::invoke(fun);
       if (!(status.error_code() ==
                 static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER) ||
@@ -239,3 +257,4 @@ bool SkinnyClient::TryAcquire(int fh, bool ex) {
 }
 void SkinnyClient::Release(int fh) { return pImpl->Release(fh); }
 bool SkinnyClient::Acquire(int fh, bool ex) { return pImpl->Acquire(fh, ex); }
+void SkinnyClient::Close(int fh) { return pImpl->Close(fh); }

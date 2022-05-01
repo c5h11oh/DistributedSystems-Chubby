@@ -13,6 +13,7 @@ PYBIND11_MODULE(pyclientlib, m) {
       .def(py::init())
       .def("Open", &SkinnyClient::Open, py::arg("path"),
            py::arg("cb") = std::nullopt)
+      .def("Close", &SkinnyClient::Close)
       .def("SetContent", &SkinnyClient::SetContent)
       .def("GetContent", &SkinnyClient::GetContent)
       .def("TryAcquire", &SkinnyClient::TryAcquire)

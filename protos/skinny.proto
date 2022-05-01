@@ -8,6 +8,11 @@ message OpenReq {
   bool subscribe = 3;
 }
 
+message CloseReq {
+  int64 session_id = 1;
+  int32 fh = 2;
+}
+
 message GetContentReq {
   int64 session_id = 1;
   int32 fh = 2;
@@ -63,12 +68,14 @@ message Empty {
 service Skinny {
   rpc StartSession (Empty) returns (SessionId) {}
   rpc Open (OpenReq) returns (Handle) {}
+  rpc Close (CloseReq) returns (Empty) {}
   rpc GetContent(GetContentReq) returns (Content) {}
   rpc SetContent(SetContentReq) returns (Empty) {}
   rpc TryAcquire(LockAcqReq) returns (Response) {}
   rpc Acquire(LockAcqReq) returns (Response) {}
   rpc Release(LockRelReq) returns (Response) {}
   rpc Delete(DeleteReq) returns (Response) {}
+  rpc EndSession (SessionId) returns (Empty) {}
 }
 
 service SkinnyCb {
