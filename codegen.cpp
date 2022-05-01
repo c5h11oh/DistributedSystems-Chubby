@@ -126,7 +126,7 @@ void gen_code(const std::string& action_name,
   puts(");");
   puts("nuraft::buffer_serializer bs(buf);");
   if (is_action) {
-    puts("bs.put_u8(static_cast<uint8_t>(action_name));");
+    puts("bs.put_i8(static_cast<int8_t>(action_name));");
   }
   for (auto& f : fields)
     printf("bs.put_%s(%s);\n", f->nuname.c_str(), f->name.c_str());
