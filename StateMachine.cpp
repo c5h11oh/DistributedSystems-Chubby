@@ -123,7 +123,7 @@ class StateMachine : public state_machine {
     // for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
     //   auto ptr = it->lock();
     //   if (ptr) {
-    //     ptr->enqueue_event(req->fh());
+    //     ptr->enqueue_event(a.fh);
     //     it++;
     //   } else {
     //     it = meta.subscribers.erase(it);
@@ -255,14 +255,14 @@ class StateMachine : public state_machine {
       meta.instance_num++;
       meta.content_gen_num = 0;
       meta.lock_gen_num = 0;
-      for (const int &session_id : meta.lock_owners) {
+      for (const int& session_id : meta.lock_owners) {
         session = sdb_->find_session(session_id);
-        session->enqueue_event(a.fh);
+        // TODO
+        // session->kathread.enqueue_event(a.fh);
       }
       meta.lock_owners.clear();
     }
     meta.cv.notify_all();
-
     action::Response res({0, ""});
     return res.serialize();
   }

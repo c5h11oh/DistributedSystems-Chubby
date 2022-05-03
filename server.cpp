@@ -20,6 +20,7 @@
 #include "in_memory_state_mgr.hxx"
 #include "libnuraft/nuraft.hxx"
 #include "libnuraft/srv_config.hxx"
+#include "raft_server.hxx"
 #include "srv_config.h"
 
 auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
@@ -91,9 +92,19 @@ auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
 int main(int argc, char **argv) {
   assert(argc >= 2);
   const int node_id = atoi(argv[1]);
-  auto sdb = std::make_shared<session::Db>();
+  nuraft::ptr<nuraft::raft_server> raft = nullptr;
+  auto sdb = std::make_shared<session::Db>([&raft](int sid) {
+    if (!raft || !raft->is_leader()) return;
+    std::thread t([&raft, sid]() {
+      action::EndSessionAction a(sid);
+      auto ret = raft->append_entries({a.serialize()});
+    });
+    t.detach();
+    return;
+  });
   auto datastore = std::make_shared<DataStore>();
   auto launcher = init_raft(node_id, datastore, sdb);
+  raft = launcher.get_raft_server();
   auto server = init_grpc(node_id, launcher.get_raft_server(), datastore, sdb);
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
