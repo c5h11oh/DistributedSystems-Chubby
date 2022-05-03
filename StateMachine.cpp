@@ -255,9 +255,10 @@ class StateMachine : public state_machine {
       meta.instance_num++;
       meta.content_gen_num = 0;
       meta.lock_gen_num = 0;
-      for (const int &session_id : meta.lock_owners) {
+      for (const int& session_id : meta.lock_owners) {
         session = sdb_->find_session(session_id);
-        session->enqueue_event(a.fh);
+        // TODO
+        // session->kathread.enqueue_event(a.fh);
       }
       meta.lock_owners.clear();
     }

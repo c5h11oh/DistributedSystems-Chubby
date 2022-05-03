@@ -198,7 +198,7 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
     }
     auto session = sdb_->find_session(req->session_id());
     std::cout << "keepalive" << std::endl;
-    session->setup_kathread(reactor, res);
+    session->kathread.set_reactor(reactor, res);
     return reactor;
   }
 
