@@ -79,9 +79,9 @@ class StateMachine : public state_machine {
       ds_->operator[](a.path);
     }
     ds_->at(a.path).first.file_exists = true;  // for previously deleted keys
-    // if (a.subscribe) {
-    //   data_[path()].first.subscribers.push_back(session);
-    // }
+    if (a.subscribe) {
+      ds_->at(a.path).first.subscribers.push_back(session);
+    }
     auto fh =
         session->add_new_handle(a.path, ds_->at(a.path).first.instance_num);
     action::OpenReturn ret(fh);
@@ -120,15 +120,15 @@ class StateMachine : public state_machine {
     // if (!meta.file_exists)
     //   return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
     content = a.content;
-    // for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
-    //   auto ptr = it->lock();
-    //   if (ptr) {
-    //     ptr->enqueue_event(a.fh);
-    //     it++;
-    //   } else {
-    //     it = meta.subscribers.erase(it);
-    //   }
-    // }
+    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
+      auto ptr = it->lock();
+      if (ptr) {
+        ptr->enqueue_event(a.fh);
+        it++;
+      } else {
+        it = meta.subscribers.erase(it);
+      }
+    }
     return nullptr;
   }
   ptr<buffer> apply_(action::AcqAction& a) {
@@ -257,8 +257,7 @@ class StateMachine : public state_machine {
       meta.lock_gen_num = 0;
       for (const int& session_id : meta.lock_owners) {
         session = sdb_->find_session(session_id);
-        // TODO
-        // session->kathread.enqueue_event(a.fh);
+        session->enqueue_event(a.fh);
       }
       meta.lock_owners.clear();
     }
