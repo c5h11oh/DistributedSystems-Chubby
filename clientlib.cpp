@@ -28,14 +28,15 @@
 using grpc::ClientContext;
 
 class SkinnyClient::impl {
+  enum class KeepAliveState { ON_GOING, DONE, KILLED };
+
  public:
   impl()
       : kathread(std::invoke(([this]() {
           StartSessionOrDie();
           return [this]() {
-            while (true) {
-              KeepAlive();
-            }
+            while (KeepAlive())
+              ;
           };
         }))) {}
 
@@ -45,6 +46,9 @@ class SkinnyClient::impl {
     skinny::Empty res;
     req.set_session_id(session_id);
     stub_->EndSession(&context, req, &res);
+    has_active_keep_alive.store(KeepAliveState::KILLED);
+    has_active_keep_alive.notify_one();
+    kathread.join();
   }
 
   int Open(const std::string &path,
@@ -174,7 +178,7 @@ class SkinnyClient::impl {
     }
   }
 
-  void KeepAlive() {
+  bool KeepAlive() {
     using namespace std::chrono_literals;
     skinny::SessionId req;
     skinny::Event res;
@@ -183,19 +187,29 @@ class SkinnyClient::impl {
     context.set_deadline(deadline);
     req.set_session_id(session_id);
 
-    std::promise<grpc::Status> status_promise;
-    std::future status_future = status_promise.get_future();
+    grpc::Status status;
+    auto done = KeepAliveState::DONE;
+    has_active_keep_alive.compare_exchange_weak(done, KeepAliveState::ON_GOING);
     stub_cb_->async()->KeepAlive(&context, &req, &res,
-                                 [&status_promise](grpc::Status s) {
-                                   status_promise.set_value(std::move(s));
+                                 [this, &status](grpc::Status s) {
+                                   auto ongoing = KeepAliveState::ON_GOING;
+                                   status = s;
+                                   has_active_keep_alive.compare_exchange_weak(
+                                       ongoing, KeepAliveState::DONE);
+                                   has_active_keep_alive.notify_one();
                                  });
 
-    if (auto status = status_future.get(); status.ok()) {
+    while (has_active_keep_alive.load() == KeepAliveState::ON_GOING)
+      has_active_keep_alive.wait(KeepAliveState::ON_GOING);
+    if (has_active_keep_alive.load() == KeepAliveState::KILLED) {
+      return false;
+    }
+    if (status.ok()) {
       if (has_conn_.load() == 0) {
         has_conn_ = 1;
         has_conn_.notify_all();
       }
-      if (!res.has_fh()) return;
+      if (!res.has_fh()) return true;
       if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
         std::invoke(it->second);
       }
@@ -212,6 +226,7 @@ class SkinnyClient::impl {
                 << std::endl;
       std::this_thread::sleep_for(500ms);
     }
+    return true;
   }
 
   void StartSessionOrDie() {
@@ -251,6 +266,7 @@ class SkinnyClient::impl {
   std::unique_ptr<skinny::SkinnyCb::Stub> stub_cb_;
   int session_id;
   std::atomic<bool> has_conn_;
+  std::atomic<KeepAliveState> has_active_keep_alive;
 
   std::thread kathread;
 };
