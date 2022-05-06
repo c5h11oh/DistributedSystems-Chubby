@@ -191,13 +191,13 @@ class SkinnyClient::impl {
                                  });
 
     if (auto status = status_future.get(); status.ok()) {
-      if (!res.has_fh()) return;
-      if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
-        std::invoke(it->second);
-      }
       if (has_conn_.load() == 0) {
         has_conn_ = 1;
         has_conn_.notify_all();
+      }
+      if (!res.has_fh()) return;
+      if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
+        std::invoke(it->second);
       }
     } else {
       has_conn_ = 0;

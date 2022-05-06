@@ -145,7 +145,6 @@ class Entry {
   std::vector<std::string> v;
   std::vector<int> inum;  // instance_num
   static std::atomic<int> inline next_id{0};
-  std::queue<int> event_queue;  // queue<fh>
   KAThread kathread;
 };
 
