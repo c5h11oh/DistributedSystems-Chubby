@@ -204,6 +204,7 @@ class SkinnyClient::impl {
     while (has_active_keep_alive.load() == KeepAliveState::ON_GOING)
       has_active_keep_alive.wait(KeepAliveState::ON_GOING);
     if (has_active_keep_alive.load() == KeepAliveState::KILLED) {
+      context.TryCancel();
       return false;
     }
     if (status.ok()) {
