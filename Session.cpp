@@ -45,7 +45,8 @@ class KAThread {
                 } else if (std::lock_guard lg(event_queue_lock_);
                            !event_queue_.empty()) {
                   // Got event => return event
-                  res_->set_fh(event_queue_.front());
+                  res_->set_event_id(event_queue_.front().first);
+                  res_->set_fh(event_queue_.front().second);
                   event_queue_.pop();
                   reactor_->Finish(grpc::Status::OK);
                   reactor_ = nullptr;
@@ -73,30 +74,48 @@ class KAThread {
     t_.join();
   }
 
-  void set_reactor(grpc::ServerUnaryReactor *reactor, skinny::Event *res) {
+  void set_reactor(grpc::ServerUnaryReactor *reactor, skinny::Event *res,
+                   int acked_eid) {
     {
       std::lock_guard lg(reactor_lock_);
       reactor_ = reactor;
       res_ = res;
     }
-    cv_.notify_one();
-  }
-
-  void enqueue_event(int fh) {
     {
-      std::lock_guard l(event_queue_lock_);
-      event_queue_.push(fh);
+      std::lock_guard lg(us_lock_);
+      acked_events.insert(acked_eid);
+      ack_event_cv_.notify_all();
     }
     cv_.notify_one();
   }
 
+  int enqueue_event(int fh) {
+    int new_eid = event_id++;
+    {
+      std::lock_guard l(event_queue_lock_);
+      event_queue_.push({new_eid, fh});
+    }
+    cv_.notify_one();
+    return new_eid;
+  }
+
+  void block_until_event_acked(int eid) {
+    std::unique_lock lk(us_lock_);
+    while (!acked_events.contains(eid)) {
+      ack_event_cv_.wait(lk);
+    }
+    acked_events.erase(eid);
+  }
+
  private:
   std::thread t_;
-  std::mutex reactor_lock_, event_queue_lock_, cv_lock_;
-  std::condition_variable cv_;
+  std::mutex reactor_lock_, event_queue_lock_, cv_lock_, us_lock_;
+  std::condition_variable cv_, ack_event_cv_;
   std::atomic<bool> cancelled_;
   grpc::ServerUnaryReactor *reactor_;
-  std::queue<int> event_queue_;
+  std::queue<std::pair<int, int>> event_queue_;  // <event_id, fh>
+  int event_id;
+  std::unordered_set<int> acked_events;
   skinny::Event *res_;
   const std::function<void(int)> &expire_cb_;
   int sid_;
@@ -109,7 +128,7 @@ class KAThread {
   int pop_event() {
     std::lock_guard l(event_queue_lock_);
     assert(!event_queue_.empty());
-    int fh = event_queue_.front();
+    int fh = event_queue_.front().second;
     event_queue_.pop();
     return fh;
   }
@@ -137,12 +156,18 @@ class Entry {
 
   const std::string &fh_to_key(int fh) const { return v.at(fh); }
 
-  void enqueue_event(int fh) {
-    if (kathread) kathread->enqueue_event(fh);
+  std::optional<int> enqueue_event(int fh) {
+    if (kathread) return kathread->enqueue_event(fh);
+    return std::nullopt;
   }
 
-  void set_reactor(grpc::ServerUnaryReactor *reactor, skinny::Event *res) {
-    if (kathread) kathread->set_reactor(reactor, res);
+  void set_reactor(grpc::ServerUnaryReactor *reactor, skinny::Event *res,
+                   int acked_eid) {
+    if (kathread) kathread->set_reactor(reactor, res, acked_eid);
+  }
+
+  void block_until_event_acked(int eid) {
+    if (kathread) kathread->block_until_event_acked(eid);
   }
 
  private:

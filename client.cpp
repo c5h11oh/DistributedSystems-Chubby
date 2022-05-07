@@ -14,7 +14,9 @@ int main(int argc, char *argv[]) {
   int fh2 = skinny.Open("/banana");
   skinny.SetContent(fh2, "hello banana");
   std::cout << skinny.GetContent(fh2) << std::endl;
-
+  std::cout << skinny.GetContent(fh2) << std::endl;
+  skinny.SetContent(fh2, "hello banana2");
+  std::cout << skinny.GetContent(fh2) << std::endl;
   // if (skinny.Acquire(fh2, true))
   //   std::cout << "Got fh2 ex lock\n";
   // else

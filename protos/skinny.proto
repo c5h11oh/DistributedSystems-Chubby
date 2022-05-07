@@ -5,8 +5,7 @@ package skinny;
 message OpenReq {
   int64 session_id = 1;
   string path = 2;
-  bool subscribe = 3;
-  bool is_directory = 4;
+  bool is_directory = 3;
 }
 
 message CloseReq {
@@ -60,10 +59,16 @@ message Content {
 
 message Event {
   optional int32 fh = 1;    
+  optional int32 event_id = 2;
 }
 
 message Empty {
 
+}
+
+message KeepAliveReq {
+    int64 session_id = 1;
+    optional int32 acked_event = 2;
 }
 
 service Skinny {
@@ -80,5 +85,5 @@ service Skinny {
 }
 
 service SkinnyCb {
-  rpc KeepAlive(SessionId) returns (Event) {};
+  rpc KeepAlive(KeepAliveReq) returns (Event) {};
 }

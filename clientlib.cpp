@@ -15,6 +15,7 @@
 #include <future>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -35,7 +36,9 @@ class SkinnyClient::impl {
       : kathread(std::invoke(([this]() {
           StartSessionOrDie();
           return [this]() {
-            while (KeepAlive())
+            std::optional<int> eid = std::nullopt;
+            bool cont = true;
+            while (std::tie(cont, eid) = KeepAlive(eid), cont)
               ;
           };
         }))) {}
@@ -58,7 +61,6 @@ class SkinnyClient::impl {
     skinny::Handle res;
     req.set_path(path);
     req.set_session_id(session_id);
-    req.set_subscribe(cb.has_value());
     req.set_is_directory(is_directory);
     auto status = InvokeRpc([&]() {
       ClientContext context;
@@ -81,9 +83,25 @@ class SkinnyClient::impl {
       ClientContext context;
       return stub_->Close(&context, req, &res);
     });
+    {
+      std::lock_guard lg(cache_lock_);
+      if (auto it = cache_.find(fh); it != cache_.end()) {
+        cache_.erase(it);
+      }
+    }
   }
 
   std::string GetContent(int fh) {
+    {
+      std::lock_guard lg(cache_lock_);
+      if (auto it = cache_.find(fh);
+          has_conn_.load() == true && it != cache_.end()) {
+        std::cout << "Read from cache" << std::endl;
+        return it->second;
+      } else {
+        std::cout << "Send read request" << std::endl;
+      }
+    }
     skinny::GetContentReq req;
     ClientContext context;
     skinny::Content res;
@@ -94,7 +112,7 @@ class SkinnyClient::impl {
       return stub_->GetContent(&context, req, &res);
     });
     assert(status.ok());
-    return res.content();
+    return cache_[fh] = res.content();
   }
 
   void SetContent(int fh, const std::string &content) {
@@ -180,14 +198,15 @@ class SkinnyClient::impl {
     }
   }
 
-  bool KeepAlive() {
+  std::pair<bool, std::optional<int>> KeepAlive(std::optional<int> eid) {
     using namespace std::chrono_literals;
-    skinny::SessionId req;
+    skinny::KeepAliveReq req;
     skinny::Event res;
     ClientContext context;
     auto deadline = std::chrono::system_clock::now() + 10s;
     context.set_deadline(deadline);
     req.set_session_id(session_id);
+    if (eid) req.set_acked_event(eid.value());
 
     grpc::Status status;
     auto done = KeepAliveState::DONE;
@@ -205,16 +224,22 @@ class SkinnyClient::impl {
       has_active_keep_alive.wait(KeepAliveState::ON_GOING);
     if (has_active_keep_alive.load() == KeepAliveState::KILLED) {
       context.TryCancel();
-      return false;
+      return {false, std::nullopt};
     }
+    std::optional<int> new_eid = std::nullopt;
     if (status.ok()) {
       if (has_conn_.load() == 0) {
         has_conn_ = 1;
         has_conn_.notify_all();
       }
-      if (!res.has_fh()) return true;
+      if (!res.has_fh()) return {true, std::nullopt};
+      new_eid = res.event_id();
       if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
         std::invoke(it->second, res.fh());
+      }
+      if (auto it = cache_.find(res.fh()); it != cache_.end()) {
+        std::cout << "invalid cache " << res.fh() << std::endl;
+        cache_.erase(it);
       }
     } else {
       has_conn_ = 0;
@@ -229,7 +254,7 @@ class SkinnyClient::impl {
                 << std::endl;
       std::this_thread::sleep_for(500ms);
     }
-    return true;
+    return {true, new_eid};
   }
 
   void StartSessionOrDie() {
@@ -265,6 +290,8 @@ class SkinnyClient::impl {
   std::shared_ptr<grpc::Channel> channel;
   // TODO: Maybe not an unordered_map
   std::unordered_map<int, std::function<void(int)>> callbacks;
+  std::mutex cache_lock_;
+  std::unordered_map<int, std::string> cache_;
   std::unique_ptr<skinny::Skinny::Stub> stub_;
   std::unique_ptr<skinny::SkinnyCb::Stub> stub_cb_;
   int session_id;

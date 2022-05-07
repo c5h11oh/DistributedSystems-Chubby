@@ -190,7 +190,7 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
 
  private:
   ServerUnaryReactor *KeepAlive(grpc::CallbackServerContext *context,
-                                const skinny::SessionId *req,
+                                const skinny::KeepAliveReq *req,
                                 skinny::Event *res) override {
     ServerUnaryReactor *reactor = context->DefaultReactor();
     if (!raft_->is_leader()) {
@@ -201,7 +201,8 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
     }
     auto session = sdb_->find_session(req->session_id());
     std::cout << "keepalive" << std::endl;
-    session->set_reactor(reactor, res);
+    session->set_reactor(reactor, res,
+                         req->has_acked_event() ? req->acked_event() : -1);
     return reactor;
   }
 

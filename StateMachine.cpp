@@ -76,9 +76,7 @@ class StateMachine : public state_machine {
     notify_events(parent_meta);
     meta.file_exists = true;  // for previously deleted keys
     auto fh = session->add_new_handle(a.path, meta.instance_num);
-    if (a.subscribe) {
-      meta.subscribers.emplace_back(session, fh);
-    }
+    meta.subscribers.emplace_back(session, fh);
     action::OpenReturn ret(fh);
     return ret.serialize();
   }
@@ -268,14 +266,23 @@ class StateMachine : public state_machine {
   }
 
   void notify_events(FileMetaData& meta) {
+    std::vector<std::thread> vt;
     for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
       auto ptr = it->first.lock();
-      if (ptr) {
-        ptr->enqueue_event(it->second);
+      if (ptr && ptr->handle_inum(it->second) != -1) {
+        auto eid = ptr->enqueue_event(it->second);
+        if (eid) {
+          vt.emplace_back([ptr, eid = eid.value()]() {
+            ptr->block_until_event_acked(eid);
+          });
+        }
         it++;
       } else {
         it = meta.subscribers.erase(it);
       }
+    }
+    for (auto& t : vt) {
+      t.join();
     }
   }
 

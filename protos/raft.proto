@@ -3,8 +3,7 @@ syntax = "proto3";
 message OpenAction {
   int64 session_id = 1;
   string path = 2;
-  int32 subscribe = 3;
-  int32 is_directory = 4;
+  int32 is_directory = 3;
 }
 
 message CloseAction {
