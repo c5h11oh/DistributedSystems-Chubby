@@ -232,7 +232,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   void close_session(int64_t session_id) {
     auto session = sdb->find_session(session_id);
     for (int i = 0; i < session->handle_count(); ++i) session->close_handle(i);
-    sdb->delete_session(session_id);
+    bool deleted = sdb->delete_session(session_id);
   }
 
   std::shared_ptr<SessionDb> sdb;

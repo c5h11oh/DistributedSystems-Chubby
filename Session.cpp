@@ -173,15 +173,16 @@ class Db {
   std::shared_ptr<Entry> find_session(int id) {
     std::lock_guard lg(db_lock);
     auto it = session_db.find(id);
-    assert(it != session_db.end());
+    if (it == session_db.end()) return nullptr;
     return it->second;
   }
 
-  void delete_session(int id) {
+  bool delete_session(int id) {
     std::lock_guard lg(db_lock);
     auto it = session_db.find(id);
-    assert(it != session_db.end());
+    if (it == session_db.end()) return false;
     session_db.erase(it);
+    return true;
   }
 
   void start_kathread() {

@@ -43,7 +43,7 @@ class SkinnyClient::impl {
   ~impl() {
     ClientContext context;
     skinny::SessionId req;
-    skinny::Empty res;
+    skinny::Response res;
     req.set_session_id(session_id);
     stub_->EndSession(&context, req, &res);
     has_active_keep_alive.store(KeepAliveState::KILLED);
@@ -98,7 +98,7 @@ class SkinnyClient::impl {
   void SetContent(int fh, const std::string &content) {
     skinny::SetContentReq req;
     ClientContext context;
-    skinny::Empty res;
+    skinny::Response res;
     req.set_session_id(session_id);
     req.set_content(content);
     req.set_fh(fh);

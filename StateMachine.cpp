@@ -75,6 +75,8 @@ class StateMachine : public state_machine {
  private:
   ptr<buffer> apply_(action::OpenAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session)
+      return action::OpenReturn(-3).serialize();
     if (ds_->find(a.path) == ds_->end()) {
       ds_->operator[](a.path);
     }
@@ -90,6 +92,8 @@ class StateMachine : public state_machine {
 
   ptr<buffer> apply_(action::CloseAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session)
+      return action::Response(-3, "Session not found").serialize();
     session->close_handle(a.fh);
     release_lock(a.session_id, a.fh);
     return nullptr;
@@ -103,6 +107,8 @@ class StateMachine : public state_machine {
 
   ptr<buffer> apply_(action::EndSessionAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session)
+      return action::Response(-3, "Session not found").serialize();
     for (int i = 0; i < session->handle_count(); ++i) {
       // does not matter as we are deleting session
       // session->close_handle(i);
@@ -114,11 +120,14 @@ class StateMachine : public state_machine {
 
   ptr<buffer> apply_(action::SetContentAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session)
+      return action::Response(-3, "Session not found").serialize();
+    
     auto& [meta, content] = ds_->at(session->fh_to_key(a.fh));
-    // if (session->handle_inum(req->fh()) != meta.instance_num)
-    //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
-    // if (!meta.file_exists)
-    //   return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
+    if (session->handle_inum(a.fh) != meta.instance_num)
+      return action::Response(-1, "Instance num mismatch").serialize();
+    if (!meta.file_exists)
+      return action::Response(-2, "File does not exist").serialize();
     content = a.content;
     for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
       auto ptr = it->lock();
@@ -133,6 +142,9 @@ class StateMachine : public state_machine {
   }
   ptr<buffer> apply_(action::AcqAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session)
+      return action::Response(-3, "Session not found").serialize();
+
     auto key = session->fh_to_key(a.fh);
     auto& meta = ds_->at(key).first;
 
@@ -142,14 +154,13 @@ class StateMachine : public state_machine {
       return action::Response(-1, "Instance num mismatch").serialize();
     if (a.blocking)  // Acquire
     {
-      puts("Called Acquire");
       std::unique_lock<std::mutex> ulock(meta.mutex);
       if (a.ex) {  // Lock in exclusive mode
         puts("Lock is EX mode");
         meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
         puts("Exit cv wait");
         if (!meta.file_exists)
-          return action::Response(-1, "File does not exist").serialize();
+          return action::Response(-2, "File does not exist").serialize();
         meta.lock_owners.insert(session->id);
         meta.is_locked_ex = true;
         meta.lock_gen_num++;
@@ -158,23 +169,20 @@ class StateMachine : public state_machine {
         meta.cv.wait(ulock, [&] {
           return meta.lock_owners.empty() || !meta.is_locked_ex;
         });
+        puts("Exit cv wait");
         if (!meta.file_exists)
-          return action::Response(-1, "File does not exist").serialize();
+          return action::Response(-2, "File does not exist").serialize();
         if (meta.lock_owners.empty()) {
           meta.is_locked_ex = false;
           meta.lock_gen_num++;
         }
         meta.lock_owners.insert(session->id);
       }
-      puts("Successfully get lock");
       return action::Response(0, "").serialize();
     } else {  // TryAcquire
-      puts("Called TryAcquire");
       std::lock_guard<std::mutex> guard(meta.mutex);
       if (!meta.file_exists) {
-        // return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
-        puts("Failed to get lock");
-        return action::Response(-1, "File does not exist").serialize();
+        return action::Response(-2, "File does not exist").serialize();
       }
 
       if (a.ex) {  // Lock in exclusive mode
@@ -182,11 +190,9 @@ class StateMachine : public state_machine {
           meta.lock_owners.insert(session->id);
           meta.is_locked_ex = true;
           meta.lock_gen_num++;
-          puts("Successfully get lock");
           return action::Response(0, "").serialize();
         } else {
-          puts("Failed to get lock");
-          return action::Response(-1, "fail to acquire").serialize();
+          return action::Response(1, "fail to acquire").serialize();
         }
       } else {  // Lock in shared mode
         if (meta.lock_owners.empty() || !meta.is_locked_ex) {
@@ -195,12 +201,9 @@ class StateMachine : public state_machine {
             meta.lock_gen_num++;
           }
           meta.lock_owners.insert(session->id);
-
-          puts("Successfully get lock");
           return action::Response(0, "").serialize();
         } else {
-          puts("Failed to get lock");
-          return action::Response(-1, "fail to acquire").serialize();
+          return action::Response(1, "fail to acquire").serialize();
         }
       }
     }
@@ -209,7 +212,9 @@ class StateMachine : public state_machine {
 
   ptr<buffer> apply_(action::RelAction& a) {
     int rc = release_lock(a.session_id, a.fh);
-    if (rc == -2)
+    if (rc == -3) 
+      return action::Response(-3, "Session not found").serialize();
+    else if (rc == -2)
       return action::Response(-2, "file not found").serialize();
     else if (rc == -1)
       return action::Response(-1, "the session does not hold this lock")
@@ -221,11 +226,15 @@ class StateMachine : public state_machine {
   }
 
   // return: whether a lock is released.
+  // -3: session not found
   // -2: file not found
   // -1: the session does not hold this lock
   // 0: release succeed
   int release_lock(int session_id, int fh) {
     auto session = sdb_->find_session(session_id);
+    if (!session) {
+      return -3;
+    }
     auto& [meta, content] = ds_->at(session->fh_to_key(fh));
     bool need_notify, released;
     {
@@ -245,6 +254,8 @@ class StateMachine : public state_machine {
 
   ptr<buffer> apply_(action::DeleteAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session)
+      return action::Response(-3, "Session not found").serialize();
     auto key = session->fh_to_key(a.fh);
     auto& [meta, content] = ds_->at(key);
 

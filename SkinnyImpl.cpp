@@ -78,20 +78,28 @@ class SkinnyImpl final : public skinny::Skinny::Service {
           static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER),
           std::to_string(raft_->get_leader()));
     }
-    // TODO
     auto session = sdb_->find_session(req->session_id());
-    auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
-    res->set_content(content);
+    if (!session) {
+      res->set_res(-3);
+      res->set_content("Session not found");
+    } else {
+      auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
+      res->set_res(0);
+      res->set_content(content);
+    }
     return Status::OK;
   }
 
   Status SetContent(ServerContext *context, const skinny::SetContentReq *req,
-                    skinny::Empty *) override {
+                    skinny::Response *res) override {
     action::SetContentAction action{req};
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
+    action::Response sm_result(*raft_ret->get());
+    res->set_res(sm_result.res);
+    res->set_msg(sm_result.msg);
     return Status::OK;
   }
 
@@ -111,11 +119,18 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   }
 
   Status EndSession(ServerContext *context, const skinny::SessionId *req,
-                    skinny::Empty *) override {
+                    skinny::Response *res) override {
     action::EndSessionAction action(req->session_id());
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
+    }
+    if (raft_ret->get()) {
+      action::Response sm_result(*raft_ret->get());
+      res->set_res(sm_result.res);
+      res->set_msg(sm_result.msg);
+    } else {
+      res->set_res(0);
     }
     return Status::OK;
   }
@@ -127,11 +142,14 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
-    action::Response sm_result(*raft_ret->get());
+    action::Response sm_result(
+        *raft_ret->get());  // 0=success, 1=failed, -1=error
     if (sm_result.res == -1)
       return Status(
           static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
           sm_result.msg);
+    res->set_res(sm_result.res);
+    res->set_msg(sm_result.msg);
     return Status::OK;
   }
 
@@ -142,11 +160,14 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
-    action::Response sm_result(*raft_ret->get());
+    action::Response sm_result(
+        *raft_ret->get());  // 0=success, 1=failed, -1=error
     if (sm_result.res == -1)
       return Status(
           static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
           sm_result.msg);
+    res->set_res(sm_result.res);
+    res->set_msg(sm_result.msg);
     return Status::OK;
   }
 
@@ -162,6 +183,9 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       return Status(
           static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
           sm_result.msg);
+
+    res->set_res(sm_result.res);
+    res->set_msg(sm_result.msg);
     return Status::OK;
   }
 
@@ -174,6 +198,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     }
     action::Response r(*raft_ret->get());
     res->set_res(r.res);
+    res->set_msg(r.msg);
     return Status::OK;
   }
 

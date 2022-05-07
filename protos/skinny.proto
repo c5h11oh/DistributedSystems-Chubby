@@ -31,6 +31,7 @@ message LockRelReq {
 
 message Response {
   int32 res = 1;
+  optional string msg = 2;
 }
 
 message SetContentReq {
@@ -54,7 +55,8 @@ message SessionId {
 }
 
 message Content {
-  string content = 1;
+  int32 res = 1;
+  string content = 2;
 }
 
 message Event {
@@ -62,7 +64,7 @@ message Event {
 }
 
 message Empty {
-
+  
 }
 
 service Skinny {
@@ -70,12 +72,12 @@ service Skinny {
   rpc Open (OpenReq) returns (Handle) {}
   rpc Close (CloseReq) returns (Empty) {}
   rpc GetContent(GetContentReq) returns (Content) {}
-  rpc SetContent(SetContentReq) returns (Empty) {}
+  rpc SetContent(SetContentReq) returns (Response) {}
   rpc TryAcquire(LockAcqReq) returns (Response) {}
   rpc Acquire(LockAcqReq) returns (Response) {}
   rpc Release(LockRelReq) returns (Response) {}
   rpc Delete(DeleteReq) returns (Response) {}
-  rpc EndSession (SessionId) returns (Empty) {}
+  rpc EndSession (SessionId) returns (Response) {}
 }
 
 service SkinnyCb {
