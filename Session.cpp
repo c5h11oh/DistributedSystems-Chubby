@@ -120,9 +120,11 @@ class Entry {
   int id;
 
   Entry(const std::function<void(int)> &cb)
-      : id(next_id.fetch_add(1, std::memory_order_relaxed)), kathread(id, cb) {}
+      : id(next_id.fetch_add(1, std::memory_order_relaxed)), cb(cb) {}
 
   ~Entry() { std::cout << "Destruct session entry" << std::endl; }
+
+  void start_kathread() { kathread = std::make_unique<KAThread>(id, cb); }
 
   int add_new_handle(std::string path, int instance_num) {
     v.push_back(path);
@@ -135,17 +137,20 @@ class Entry {
 
   const std::string &fh_to_key(int fh) const { return v.at(fh); }
 
-  void enqueue_event(int fh) { kathread.enqueue_event(fh); }
+  void enqueue_event(int fh) {
+    if (kathread) kathread->enqueue_event(fh);
+  }
 
   void set_reactor(grpc::ServerUnaryReactor *reactor, skinny::Event *res) {
-    kathread.set_reactor(reactor, res);
+    if (kathread) kathread->set_reactor(reactor, res);
   }
 
  private:
   std::vector<std::string> v;
   std::vector<int> inum;  // instance_num
   static std::atomic<int> inline next_id{0};
-  KAThread kathread;
+  const std::function<void(int)> &cb;
+  std::unique_ptr<KAThread> kathread;
 };
 
 class Db {
@@ -177,6 +182,11 @@ class Db {
     auto it = session_db.find(id);
     assert(it != session_db.end());
     session_db.erase(it);
+  }
+
+  void start_kathread() {
+    std::lock_guard lg(db_lock);
+    for (auto &it : session_db) it.second->start_kathread();
   }
 };
 }  // namespace session

@@ -94,7 +94,7 @@ add_custom_target(
 find_package(OpenSSL REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
-add_executable(server server.cpp ${nuraft_SOURCE_DIR}/examples/in_memory_log_store.cxx ${PROTOBUF_DST})
+add_executable(server server.cpp ${nuraft_SOURCE_DIR}/examples/in_memory_log_store.cxx ${nuraft_SOURCE_DIR}/examples/logger.cc ${PROTOBUF_DST})
 add_dependencies(server action)
 target_include_directories(server PUBLIC ${nuraft_SOURCE_DIR}/include)
 target_include_directories(server PUBLIC ${nuraft_SOURCE_DIR}/include/libnuraft)

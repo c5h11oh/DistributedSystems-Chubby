@@ -103,6 +103,9 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       return status;
     }
     action::StartSessionReturn r(*raft_ret->get());
+    if (raft_->is_leader()) {
+      sdb_->find_session(r.session_id)->start_kathread();
+    }
     res->set_session_id(r.session_id);
     return Status::OK;
   }

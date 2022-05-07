@@ -20,6 +20,7 @@
 #include "in_memory_state_mgr.hxx"
 #include "libnuraft/nuraft.hxx"
 #include "libnuraft/srv_config.hxx"
+#include "logger_wrapper.hxx"
 #include "raft_server.hxx"
 #include "srv_config.h"
 
@@ -54,7 +55,10 @@ auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
   const auto [host, port] = SRV_CONFIG[node_id];
   const auto endpoint = host + ":" + std::to_string(port);
   // Replace with your logger, state machine, and state manager.
+  // std::string log_file_name = "./srv" + std::to_string(node_id) + ".log";
+  // ptr<logger> my_logger = cs_new<logger_wrapper>(log_file_name, 4);
   ptr<logger> my_logger = nullptr;
+
   ptr<state_machine> my_state_machine =
       cs_new<StateMachine::StateMachine>(ds, sdb);
   ptr<state_mgr> my_state_manager = cs_new<inmem_state_mgr>(node_id, endpoint);
@@ -63,10 +67,18 @@ auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
   raft_params params;              // your Raft parameters
   params.return_method_ = raft_params::blocking;
   params.client_req_timeout_ = INT_MAX;
+  auto opt = raft_server::init_options();
+  opt.raft_callback_ = [sdb](cb_func::Type type, cb_func::Param *) {
+    if (type == cb_func::Type::BecomeLeader) {
+      sdb->start_kathread();
+    }
+    return cb_func::ReturnCode::Ok;
+  };
 
   raft_launcher launcher;
-  ptr<raft_server> server = launcher.init(my_state_machine, my_state_manager,
-                                          my_logger, port, asio_opt, params);
+  ptr<raft_server> server =
+      launcher.init(my_state_machine, my_state_manager, my_logger, port,
+                    asio_opt, params, opt);
 
   // Need to wait for initialization.
   while (!server->is_initialized()) {
