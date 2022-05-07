@@ -116,80 +116,40 @@ class StateMachine : public state_machine {
     notify_events(meta);
     return nullptr;
   }
+
+  // this is try acquire.
   ptr<buffer> apply_(action::AcqAction& a) {
+    // must acquired meta.mutex to be here
     auto session = sdb_->find_session(a.session_id);
     auto key = session->fh_to_key(a.fh);
     auto& meta = ds_->at(key).first;
 
-    action::Response res;
-
-    if (session->handle_inum(a.fh) != meta.instance_num)
-      return action::Response(-1, "Instance num mismatch").serialize();
-    if (a.blocking)  // Acquire
-    {
-      puts("Called Acquire");
-      std::unique_lock<std::mutex> ulock(meta.mutex);
-      if (a.ex) {  // Lock in exclusive mode
-        puts("Lock is EX mode");
-        meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
-        puts("Exit cv wait");
-        if (!meta.file_exists)
-          return action::Response(-1, "File does not exist").serialize();
+    if (a.ex) {  // Lock in exclusive mode
+      if (meta.lock_owners.empty()) {
         meta.lock_owners.insert(session->id);
         meta.is_locked_ex = true;
         meta.lock_gen_num++;
-      } else {  // Lock in shared mode
-        puts("Lock is SH mode");
-        meta.cv.wait(ulock, [&] {
-          return meta.lock_owners.empty() || !meta.is_locked_ex;
-        });
-        if (!meta.file_exists)
-          return action::Response(-1, "File does not exist").serialize();
+        puts("Successfully get lock");
+        return action::Response(0, "").serialize();
+      } else {
+        puts("Failed to get lock");
+        return action::Response(1, "fail to acquire").serialize();
+      }
+    } else {  // Lock in shared mode
+      if (meta.lock_owners.empty() || !meta.is_locked_ex) {
         if (meta.lock_owners.empty()) {
-          meta.is_locked_ex = false;
+          meta.is_locked_ex = false;  // first reader needs to set it
           meta.lock_gen_num++;
         }
         meta.lock_owners.insert(session->id);
-      }
-      puts("Successfully get lock");
-      return action::Response(0, "").serialize();
-    } else {  // TryAcquire
-      puts("Called TryAcquire");
-      std::lock_guard<std::mutex> guard(meta.mutex);
-      if (!meta.file_exists) {
-        // return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
+
+        puts("Successfully get lock");
+        return action::Response(0, "").serialize();
+      } else {
         puts("Failed to get lock");
-        return action::Response(-1, "File does not exist").serialize();
-      }
-
-      if (a.ex) {  // Lock in exclusive mode
-        if (meta.lock_owners.empty()) {
-          meta.lock_owners.insert(session->id);
-          meta.is_locked_ex = true;
-          meta.lock_gen_num++;
-          puts("Successfully get lock");
-          return action::Response(0, "").serialize();
-        } else {
-          puts("Failed to get lock");
-          return action::Response(-1, "fail to acquire").serialize();
-        }
-      } else {  // Lock in shared mode
-        if (meta.lock_owners.empty() || !meta.is_locked_ex) {
-          if (meta.lock_owners.empty()) {
-            meta.is_locked_ex = false;  // first reader needs to set it
-            meta.lock_gen_num++;
-          }
-          meta.lock_owners.insert(session->id);
-
-          puts("Successfully get lock");
-          return action::Response(0, "").serialize();
-        } else {
-          puts("Failed to get lock");
-          return action::Response(-1, "fail to acquire").serialize();
-        }
+        return action::Response(1, "fail to acquire").serialize();
       }
     }
-    return res.serialize();
   }
 
   ptr<buffer> apply_(action::RelAction& a) {
@@ -220,6 +180,7 @@ class StateMachine : public state_machine {
       std::cout << "sess " << session_id << " rel lock @ "
                 << session->fh_to_key(fh) << ": " << std::boolalpha << released
                 << std::endl;
+      need_notify = meta.lock_owners.empty();
     }
     if (need_notify) {
       meta.cv.notify_all();  // If a EX lock is released, *all* waiting SH reqs

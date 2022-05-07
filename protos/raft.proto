@@ -23,7 +23,6 @@ message AcqAction {
   int64 session_id = 1;
   int32 fh = 2;
   int32 ex = 3;
-  int32 blocking = 4;
 }
 
 message RelAction {
