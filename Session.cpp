@@ -199,8 +199,7 @@ class Db {
   std::shared_ptr<Entry> find_session(int id) {
     std::lock_guard lg(db_lock);
     auto it = session_db.find(id);
-    assert(it != session_db.end());
-    return it->second;
+    return it == session_db.end() ? nullptr : it->second;
   }
 
   void delete_session(int id) {

@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <iostream>
 #include <mutex>
@@ -49,6 +50,9 @@ class StateMachine : public state_machine {
  private:
   ptr<buffer> apply_(action::OpenAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session) {
+      return action::OpenReturn(-1, "No such session", -1).serialize();
+    }
     if (ds_->find(a.path) == ds_->end()) {
       ds_->operator[](a.path);
     }
@@ -77,36 +81,45 @@ class StateMachine : public state_machine {
     meta.file_exists = true;  // for previously deleted keys
     auto fh = session->add_new_handle(a.path, meta.instance_num);
     meta.subscribers.emplace_back(session, fh);
-    action::OpenReturn ret(fh);
+    action::OpenReturn ret(0, "OK", fh);
     return ret.serialize();
   }
 
   ptr<buffer> apply_(action::CloseAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session) {
+      return action::Response(-1, "No such session").serialize();
+    }
     session->close_handle(a.fh);
     release_lock(a.session_id, a.fh);
-    return nullptr;
+    return action::Response(0, "OK").serialize();
   }
 
   ptr<buffer> apply_(action::StartSessionAction& a) {
     auto session = sdb_->create_session();
-    action::StartSessionReturn ret(session->id);
+    action::StartSessionReturn ret(0, "OK", session->id);
     return ret.serialize();
   }
 
   ptr<buffer> apply_(action::EndSessionAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session) {
+      return action::Response(-1, "No such session").serialize();
+    }
     for (int i = 0; i < session->handle_count(); ++i) {
       // does not matter as we are deleting session
       // session->close_handle(i);
       release_lock(a.session_id, i);
     }
     sdb_->delete_session(a.session_id);
-    return nullptr;
+    return action::Response(0, "OK").serialize();
   }
 
   ptr<buffer> apply_(action::SetContentAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (!session) {
+      return action::Response(-1, "No such session").serialize();
+    }
     auto& [meta, content] = ds_->at(session->fh_to_key(a.fh));
     // if (session->handle_inum(req->fh()) != meta.instance_num)
     //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
@@ -114,7 +127,7 @@ class StateMachine : public state_machine {
     //   return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
     content = a.content;
     notify_events(meta);
-    return nullptr;
+    return action::Response(0, "OK").serialize();
   }
 
   // this is try acquire.
@@ -161,8 +174,10 @@ class StateMachine : public state_machine {
           .serialize();
     else if (rc == 0)
       return action::Response(0, "").serialize();
-    else
+    else {
+      std::terminate();
       assert(false);
+    }
   }
 
   // return: whether a lock is released.

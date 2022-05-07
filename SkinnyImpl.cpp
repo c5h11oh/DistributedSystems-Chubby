@@ -20,6 +20,7 @@
 
 #include "StateMachine.cpp"
 #include "async.hxx"
+#include "buffer_serializer.hxx"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
 #include "srv_config.h"
@@ -38,8 +39,13 @@ class SkinnyImpl final : public skinny::Skinny::Service {
  private:
   Status parse_raft_result(
       nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>> r) {
-    if (r->get_accepted()) {
-      return Status::OK;
+    if (r->get_accepted() && r->get_result_code() == nuraft::OK) {
+      action::Response res(*r->get());
+      if (res.res == 0) {
+        return Status::OK;
+      } else {
+        return Status(grpc::StatusCode::ABORTED, res.msg);
+      }
     } else if (r->get_result_code() == nuraft::NOT_LEADER) {
       return Status(
           static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER),

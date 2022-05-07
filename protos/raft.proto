@@ -30,26 +30,31 @@ message RelAction {
   int32 fh = 2;
 }
 
-message Response {
-  int32 res = 1;
-  string msg = 2;
-}
-
 message SetContentAction {
     int64 session_id = 1;
     int32 fh = 2;
     string content = 3;
 }
 
-message OpenReturn {
-  int32 fh = 1;
-}
-
-message StartSessionReturn {
-  int64 session_id = 1;
-}
-
 message DeleteAction {
   int64 session_id = 1;
   int32 fh = 2;
 }
+
+message Response {
+  int32 res = 1;
+  string msg = 2;
+}
+
+message OpenReturn {
+  int32 res = 1;
+  string msg = 2;
+  int32 fh = 3;
+}
+
+message StartSessionReturn {
+  int32 res = 1;
+  string msg = 2;
+  int64 session_id = 3;
+}
+
