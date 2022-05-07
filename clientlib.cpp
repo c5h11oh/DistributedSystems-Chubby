@@ -52,12 +52,14 @@ class SkinnyClient::impl {
   }
 
   int Open(const std::string &path,
-           const std::optional<std::function<void()>> &cb = std::nullopt) {
+           const std::optional<std::function<void(int)>> &cb = std::nullopt,
+           bool is_directory = false) {
     skinny::OpenReq req;
     skinny::Handle res;
     req.set_path(path);
     req.set_session_id(session_id);
     req.set_subscribe(cb.has_value());
+    req.set_is_directory(is_directory);
     auto status = InvokeRpc([&]() {
       ClientContext context;
       return stub_->Open(&context, req, &res);
@@ -211,7 +213,7 @@ class SkinnyClient::impl {
       }
       if (!res.has_fh()) return true;
       if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
-        std::invoke(it->second);
+        std::invoke(it->second, res.fh());
       }
     } else {
       has_conn_ = 0;
@@ -261,7 +263,7 @@ class SkinnyClient::impl {
   int cur_srv_id;
   std::shared_ptr<grpc::Channel> channel;
   // TODO: Maybe not an unordered_map
-  std::unordered_map<int, std::function<void()>> callbacks;
+  std::unordered_map<int, std::function<void(int)>> callbacks;
   std::unique_ptr<skinny::Skinny::Stub> stub_;
   std::unique_ptr<skinny::SkinnyCb::Stub> stub_cb_;
   int session_id;
@@ -274,8 +276,12 @@ class SkinnyClient::impl {
 SkinnyClient::SkinnyClient() { pImpl = std::make_unique<impl>(); };
 SkinnyClient::~SkinnyClient() = default;
 int SkinnyClient::Open(const std::string &path,
-                       const std::optional<std::function<void()>> &cb) {
+                       const std::optional<std::function<void(int)>> &cb) {
   return pImpl->Open(path, cb);
+};
+int SkinnyClient::OpenDir(const std::string &path,
+                          const std::optional<std::function<void(int)>> &cb) {
+  return pImpl->Open(path, cb, true);
 };
 std::string SkinnyClient::GetContent(int fh) { return pImpl->GetContent(fh); };
 void SkinnyClient::SetContent(int fh, const std::string &content) {

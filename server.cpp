@@ -115,6 +115,9 @@ int main(int argc, char **argv) {
     return;
   });
   auto datastore = std::make_shared<DataStore>();
+  datastore->operator[]("/");
+  datastore->at("/").first.file_exists = true;
+  datastore->at("/").first.is_directory = true;
   auto launcher = init_raft(node_id, datastore, sdb);
   raft = launcher.get_raft_server();
   auto server = init_grpc(node_id, launcher.get_raft_server(), datastore, sdb);

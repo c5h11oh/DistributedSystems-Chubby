@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 #include <mutex>
 #include <variant>
@@ -34,42 +35,15 @@ class StateMachine : public state_machine {
     return result;
   }
 
-  // TODO
-  bool apply_snapshot(snapshot& s) override {
-    std::cout << "apply snapshot " << s.get_last_log_idx() << " term "
-              << s.get_last_log_term() << std::endl;
-    // Clone snapshot from `s`.
-    {
-      std::lock_guard<std::mutex> l(last_snapshot_lock_);
-      ptr<buffer> snp_buf = s.serialize();
-      last_snapshot_ = snapshot::deserialize(*snp_buf);
-    }
-    return true;
-  }
+  bool apply_snapshot(snapshot& s) override { return false; }
 
-  // TODO
-  ptr<snapshot> last_snapshot() override {
-    // Just return the latest snapshot.
-    std::lock_guard<std::mutex> l(last_snapshot_lock_);
-    return last_snapshot_;
-  }
+  ptr<snapshot> last_snapshot() override { return 0; }
 
-  ulong last_commit_index() override { return last_committed_idx_; }
+  ulong last_commit_index() override { return 0; }
 
-  // TODO
   void create_snapshot(snapshot& s,
                        async_result<bool>::handler_type& when_done) override {
-    std::cout << "create snapshot " << s.get_last_log_idx() << " term "
-              << s.get_last_log_term() << std::endl;
-    // Clone snapshot from `s`.
-    {
-      std::lock_guard<std::mutex> l(last_snapshot_lock_);
-      ptr<buffer> snp_buf = s.serialize();
-      last_snapshot_ = snapshot::deserialize(*snp_buf);
-    }
-    ptr<std::exception> except(nullptr);
-    bool ret = true;
-    when_done(ret, except);
+    return;
   }
 
  private:
@@ -78,12 +52,33 @@ class StateMachine : public state_machine {
     if (ds_->find(a.path) == ds_->end()) {
       ds_->operator[](a.path);
     }
-    ds_->at(a.path).first.file_exists = true;  // for previously deleted keys
-    if (a.subscribe) {
-      ds_->at(a.path).first.subscribers.push_back(session);
+    auto& [meta, content] = ds_->at(a.path);
+    // Handle creating a directory
+    if (meta.file_exists == false) {
+      meta.is_directory = a.is_directory;
     }
-    auto fh =
-        session->add_new_handle(a.path, ds_->at(a.path).first.instance_num);
+    // Update parent dir
+    std::filesystem::path path = a.path;
+    std::string parent_path = path.parent_path();
+    if (!ds_->contains(parent_path)) {
+      std::cout << "Parent path does not exist" << std::endl;
+      assert(0);
+    }
+    auto& [parent_meta, parent_content] = ds_->at(parent_path);
+    if (!parent_meta.is_directory) {
+      std::cout << "Parent is not a directory" << std::endl;
+      assert(0);
+    }
+    if (path != "/" && meta.file_exists == false) {
+      std::lock_guard lg(parent_meta.mutex);
+      parent_content += std::string(1, '\0') + std::string(path.filename());
+    }
+    notify_events(parent_meta);
+    meta.file_exists = true;  // for previously deleted keys
+    auto fh = session->add_new_handle(a.path, meta.instance_num);
+    if (a.subscribe) {
+      meta.subscribers.emplace_back(session, fh);
+    }
     action::OpenReturn ret(fh);
     return ret.serialize();
   }
@@ -120,15 +115,7 @@ class StateMachine : public state_machine {
     // if (!meta.file_exists)
     //   return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
     content = a.content;
-    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
-      auto ptr = it->lock();
-      if (ptr) {
-        ptr->enqueue_event(a.fh);
-        it++;
-      } else {
-        it = meta.subscribers.erase(it);
-      }
-    }
+    notify_events(meta);
     return nullptr;
   }
   ptr<buffer> apply_(action::AcqAction& a) {
@@ -247,7 +234,10 @@ class StateMachine : public state_machine {
     auto session = sdb_->find_session(a.session_id);
     auto key = session->fh_to_key(a.fh);
     auto& [meta, content] = ds_->at(key);
-
+    if (meta.is_directory && !content.empty()) {
+      std::cout << "Directory is not empty" << std::endl;
+      assert(0);
+    }
     content.clear();
     {
       std::lock_guard<std::mutex> guard(meta.mutex);
@@ -262,18 +252,35 @@ class StateMachine : public state_machine {
       meta.lock_owners.clear();
     }
     meta.cv.notify_all();
+    std::filesystem::path path{key};
+    std::filesystem::path parent_path = path.parent_path();
+    auto& [parent_meta, parent_content] = ds_->at(parent_path);
+    {
+      std::lock_guard lg(parent_meta.mutex);
+      size_t pos = parent_content.find(std::string(1, '\0') +
+                                       std::string(path.filename()));
+      if (pos != std::string::npos)
+        parent_content.erase(pos, std::string(path.filename()).length() + 1);
+    }
+    notify_events(parent_meta);
     action::Response res({0, ""});
     return res.serialize();
   }
 
+  void notify_events(FileMetaData& meta) {
+    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
+      auto ptr = it->first.lock();
+      if (ptr) {
+        ptr->enqueue_event(it->second);
+        it++;
+      } else {
+        it = meta.subscribers.erase(it);
+      }
+    }
+  }
+
   // Last committed Raft log number.
   std::atomic<uint64_t> last_committed_idx_;
-
-  // Last snapshot.
-  ptr<snapshot> last_snapshot_;
-
-  // Mutex for last snapshot.
-  std::mutex last_snapshot_lock_;
 
   std::shared_ptr<session::Db> sdb_;
   std::shared_ptr<DataStore> ds_;

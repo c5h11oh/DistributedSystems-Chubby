@@ -6,6 +6,7 @@ message OpenReq {
   int64 session_id = 1;
   string path = 2;
   bool subscribe = 3;
+  bool is_directory = 4;
 }
 
 message CloseReq {

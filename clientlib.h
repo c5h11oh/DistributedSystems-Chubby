@@ -14,7 +14,9 @@ class SkinnyClient {
   ~SkinnyClient();
 
   int Open(const std::string &path,
-           const std::optional<std::function<void()>> &cb = std::nullopt);
+           const std::optional<std::function<void(int)>> &cb = std::nullopt);
+  int OpenDir(const std::string &path,
+              const std::optional<std::function<void(int)>> &cb = std::nullopt);
   void Close(int fh);
   std::string GetContent(int fh);
   void SetContent(int fh, const std::string &content);
