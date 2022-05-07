@@ -101,7 +101,7 @@ class KAThread {
 
   void block_until_event_acked(int eid) {
     std::unique_lock lk(us_lock_);
-    while (!acked_events.contains(eid)) {
+    while (!acked_events.contains(eid) && !cancelled_.load()) {
       ack_event_cv_.wait(lk);
     }
     acked_events.erase(eid);
@@ -123,6 +123,7 @@ class KAThread {
   void cancel() {
     cancelled_.store(1);
     cv_.notify_one();
+    ack_event_cv_.notify_all();
   }
 
   int pop_event() {
