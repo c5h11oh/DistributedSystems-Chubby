@@ -11,16 +11,26 @@ namespace py = pybind11;
 PYBIND11_MODULE(pyclientlib, m) {
   py::class_<SkinnyClient>(m, "SkinnyClient")
       .def(py::init())
-      .def("Open", &SkinnyClient::Open, py::arg("path"),
+      .def("Open", &SkinnyClient::Open,
+           py::call_guard<py::gil_scoped_release>(), py::arg("path"),
            py::arg("cb") = std::nullopt)
-      .def("Close", &SkinnyClient::Close)
-      .def("SetContent", &SkinnyClient::SetContent)
+      .def("OpenDir", &SkinnyClient::OpenDir,
+           py::call_guard<py::gil_scoped_release>(), py::arg("path"),
+           py::arg("cb") = std::nullopt)
+      .def("Close", &SkinnyClient::Close,
+           py::call_guard<py::gil_scoped_release>())
+      .def("SetContent", &SkinnyClient::SetContent,
+           py::call_guard<py::gil_scoped_release>())
       .def("GetContent", [](SkinnyClient& sc,
                             int fh) { return py::bytes(sc.GetContent(fh)); })
-      .def("TryAcquire", &SkinnyClient::TryAcquire)
-      .def("Acquire", &SkinnyClient::Acquire)
-      .def("Release", &SkinnyClient::Release)
-      .def("Delete", &SkinnyClient::Delete);
+      .def("TryAcquire", &SkinnyClient::TryAcquire,
+           py::call_guard<py::gil_scoped_release>())
+      .def("Acquire", &SkinnyClient::Acquire,
+           py::call_guard<py::gil_scoped_release>())
+      .def("Release", &SkinnyClient::Release,
+           py::call_guard<py::gil_scoped_release>())
+      .def("Delete", &SkinnyClient::Delete,
+           py::call_guard<py::gil_scoped_release>());
   py::class_<SkinnyDiagnosticClient>(m, "SkinnyDiagnosticClient")
       .def(py::init())
       .def("GetLeader", &SkinnyDiagnosticClient::GetLeader);
