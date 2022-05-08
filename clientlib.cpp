@@ -113,7 +113,11 @@ class SkinnyClient::impl {
       return stub_->GetContent(&context, req, &res);
     });
     assert(status.ok());
-    return cache_[fh] = res.content();
+    {
+      std::lock_guard lg(cache_lock_);
+      cache_[fh] = res.content();
+    }
+    return res.content();
   }
 
   void SetContent(int fh, const std::string &content) {
@@ -230,6 +234,10 @@ class SkinnyClient::impl {
     if (status.ok()) {
       if (has_conn_.load() == 0) {
         has_conn_ = 1;
+        {
+          std::lock_guard lg(cache_lock_);
+          cache_.clear();
+        }
         has_conn_.notify_all();
       }
       if (!res.has_fh()) return std::nullopt;
@@ -237,9 +245,12 @@ class SkinnyClient::impl {
       if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
         std::invoke(it->second, res.fh());
       }
-      if (auto it = cache_.find(res.fh()); it != cache_.end()) {
-        std::cout << "invalid cache " << res.fh() << std::endl;
-        cache_.erase(it);
+      {
+        std::lock_guard lg(cache_lock_);
+        if (auto it = cache_.find(res.fh()); it != cache_.end()) {
+          std::cout << "invalid cache " << res.fh() << std::endl;
+          cache_.erase(it);
+        }
       }
     } else {
       has_conn_ = 0;
