@@ -32,17 +32,15 @@
 using grpc::ClientContext;
 
 class SkinnyClient::impl {
-  enum class KeepAliveState { ON_GOING, DONE, KILLED };
-
  public:
   impl()
       : kathread(std::invoke(([this]() {
           StartSessionOrDie();
           return [this]() {
             std::optional<int> eid = std::nullopt;
-            bool cont = true;
-            while (std::tie(cont, eid) = KeepAlive(eid), cont)
-              ;
+            while (!cancelled_.load()) {
+              eid = KeepAlive(eid);
+            }
           };
         }))) {}
 
@@ -52,8 +50,8 @@ class SkinnyClient::impl {
     skinny::Empty res;
     req.set_session_id(session_id);
     stub_->EndSession(&context, req, &res);
-    has_active_keep_alive.store(KeepAliveState::KILLED);
-    has_active_keep_alive.notify_one();
+    cancelled_.store(true);
+    cv_.notify_one();
     kathread.join();
   }
 
@@ -201,7 +199,7 @@ class SkinnyClient::impl {
     }
   }
 
-  std::pair<bool, std::optional<int>> KeepAlive(std::optional<int> eid) {
+  std::optional<int> KeepAlive(std::optional<int> eid) {
     using namespace std::chrono_literals;
     skinny::KeepAliveReq req;
     skinny::Event res;
@@ -211,31 +209,30 @@ class SkinnyClient::impl {
     req.set_session_id(session_id);
     if (eid) req.set_acked_event(eid.value());
 
-    grpc::Status status;
-    auto done = KeepAliveState::DONE;
-    has_active_keep_alive.compare_exchange_weak(done, KeepAliveState::ON_GOING);
+    std::optional<grpc::Status> status_optional;
+    std::mutex mu;
     stub_cb_->async()->KeepAlive(&context, &req, &res,
-                                 [this, &status](grpc::Status s) {
-                                   auto ongoing = KeepAliveState::ON_GOING;
-                                   status = s;
-                                   has_active_keep_alive.compare_exchange_weak(
-                                       ongoing, KeepAliveState::DONE);
-                                   has_active_keep_alive.notify_one();
+                                 [this, &status_optional, &mu](grpc::Status s) {
+                                   std::lock_guard<std::mutex> lock(mu);
+                                   status_optional = std::move(s);
+                                   cv_.notify_one();
                                  });
 
-    while (has_active_keep_alive.load() == KeepAliveState::ON_GOING)
-      has_active_keep_alive.wait(KeepAliveState::ON_GOING);
-    if (has_active_keep_alive.load() == KeepAliveState::KILLED) {
-      context.TryCancel();
-      return {false, std::nullopt};
+    std::unique_lock lock(mu);
+    while (!status_optional) {
+      cv_.wait(lock);
+      if (cancelled_.load()) {
+        context.TryCancel();
+      }
     }
     std::optional<int> new_eid = std::nullopt;
+    auto status = status_optional.value();
     if (status.ok()) {
       if (has_conn_.load() == 0) {
         has_conn_ = 1;
         has_conn_.notify_all();
       }
-      if (!res.has_fh()) return {true, std::nullopt};
+      if (!res.has_fh()) return std::nullopt;
       new_eid = res.event_id();
       if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
         std::invoke(it->second, res.fh());
@@ -247,17 +244,21 @@ class SkinnyClient::impl {
     } else {
       has_conn_ = 0;
       int next_server_id = cur_srv_id + 1;
-      if (status.error_code() == grpc::StatusCode::CANCELLED) {
+      if (status.error_code() ==
+          static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER)) {
         if (auto new_leader = std::stoi(status.error_message());
             new_leader != -1)
           next_server_id = new_leader;
+      } else if (status.error_code() == grpc::StatusCode::CANCELLED &&
+                 cancelled_.load()) {
+        return std::nullopt;
       }
       change_server(next_server_id);
       std::cout << status.error_code() << ": " << status.error_message()
                 << std::endl;
       std::this_thread::sleep_for(500ms);
     }
-    return {true, new_eid};
+    return new_eid;
   }
 
   void StartSessionOrDie() {
@@ -292,7 +293,6 @@ class SkinnyClient::impl {
 
   int cur_srv_id;
   std::shared_ptr<grpc::Channel> channel;
-  // TODO: Maybe not an unordered_map
   std::unordered_map<int, std::function<void(int)>> callbacks;
   std::mutex cache_lock_;
   std::unordered_map<int, std::string> cache_;
@@ -300,7 +300,8 @@ class SkinnyClient::impl {
   std::unique_ptr<skinny::SkinnyCb::Stub> stub_cb_;
   int session_id;
   std::atomic<bool> has_conn_;
-  std::atomic<KeepAliveState> has_active_keep_alive;
+  std::atomic<bool> cancelled_;
+  std::condition_variable cv_;
 
   std::thread kathread;
 };
