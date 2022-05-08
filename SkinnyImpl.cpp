@@ -63,6 +63,10 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       return status;
     }
     action::OpenReturn r(*raft_ret->get());
+    std::filesystem::path path = req->path();
+    std::string parent_path = path.parent_path();
+    auto &[parent_meta, parent_content] = ds_->at(parent_path);
+    notify_events(parent_meta);
     res->set_fh(r.fh);
     return Status::OK;
   }
@@ -98,6 +102,10 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
+    auto session = sdb_->find_session(req->session_id());
+    assert(session != nullptr);
+    auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
+    notify_events(meta);
     return Status::OK;
   }
 
@@ -241,7 +249,35 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     }
     action::Response r(*raft_ret->get());
     res->set_res(r.res);
+
+    auto session = sdb_->find_session(req->session_id());
+    auto key = session->fh_to_key(req->fh());
+    std::filesystem::path path{key};
+    std::string parent_path = path.parent_path();
+    auto &[parent_meta, parent_content] = ds_->at(parent_path);
+    notify_events(parent_meta);
     return Status::OK;
+  }
+
+  void notify_events(FileMetaData &meta) {
+    std::vector<std::thread> vt;
+    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
+      auto ptr = it->first.lock();
+      if (ptr && ptr->handle_inum(it->second) != -1) {
+        auto eid = ptr->enqueue_event(it->second);
+        if (eid) {
+          vt.emplace_back([ptr, eid = eid.value()]() {
+            ptr->block_until_event_acked(eid);
+          });
+        }
+        it++;
+      } else {
+        it = meta.subscribers.erase(it);
+      }
+    }
+    for (auto &t : vt) {
+      t.join();
+    }
   }
 
   std::shared_ptr<nuraft::raft_server> raft_;

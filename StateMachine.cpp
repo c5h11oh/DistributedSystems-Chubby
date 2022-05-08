@@ -77,7 +77,6 @@ class StateMachine : public state_machine {
       std::lock_guard lg(parent_meta.mutex);
       parent_content += std::string(1, '\0') + std::string(path.filename());
     }
-    notify_events(parent_meta);
     meta.file_exists = true;  // for previously deleted keys
     auto fh = session->add_new_handle(a.path, meta.instance_num);
     meta.subscribers.emplace_back(session, fh);
@@ -126,7 +125,6 @@ class StateMachine : public state_machine {
     // if (!meta.file_exists)
     //   return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
     content = a.content;
-    notify_events(meta);
     return action::Response(0, "OK").serialize();
   }
 
@@ -236,30 +234,8 @@ class StateMachine : public state_machine {
       if (pos != std::string::npos)
         parent_content.erase(pos, std::string(path.filename()).length() + 1);
     }
-    notify_events(parent_meta);
     action::Response res({0, ""});
     return res.serialize();
-  }
-
-  void notify_events(FileMetaData& meta) {
-    std::vector<std::thread> vt;
-    for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
-      auto ptr = it->first.lock();
-      if (ptr && ptr->handle_inum(it->second) != -1) {
-        auto eid = ptr->enqueue_event(it->second);
-        if (eid) {
-          vt.emplace_back([ptr, eid = eid.value()]() {
-            ptr->block_until_event_acked(eid);
-          });
-        }
-        it++;
-      } else {
-        it = meta.subscribers.erase(it);
-      }
-    }
-    for (auto& t : vt) {
-      t.join();
-    }
   }
 
   // Last committed Raft log number.
