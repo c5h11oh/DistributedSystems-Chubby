@@ -5,9 +5,8 @@
 #include <string>
 #include <thread>
 
-namespace grpc {
-class Status;
-}
+#include "includes/diagnostic.grpc.pb.h"
+
 class SkinnyClient {
  public:
   SkinnyClient();
@@ -28,4 +27,13 @@ class SkinnyClient {
  private:
   class impl;
   std::experimental::propagate_const<std::unique_ptr<impl>> pImpl;
+};
+
+class SkinnyDiagnosticClient {
+ public:
+  SkinnyDiagnosticClient();
+  int GetLeader();
+
+ private:
+  std::vector<std::unique_ptr<diagnostic::Diagnostic::Stub>> stubs_;
 };

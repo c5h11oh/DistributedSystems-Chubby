@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <queue>
+#include <shared_mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -144,7 +145,10 @@ class Entry {
 
   ~Entry() { std::cout << "Destruct session entry" << std::endl; }
 
-  void start_kathread() { kathread = std::make_unique<KAThread>(id, cb); }
+  void start_kathread() {
+    std::unique_lock lk(kalock_);
+    kathread = std::make_unique<KAThread>(id, cb);
+  }
 
   int add_new_handle(std::string path, int instance_num) {
     v.push_back(path);
@@ -158,16 +162,19 @@ class Entry {
   const std::string &fh_to_key(int fh) const { return v.at(fh); }
 
   std::optional<int> enqueue_event(int fh) {
+    std::shared_lock lk(kalock_);
     if (kathread) return kathread->enqueue_event(fh);
     return std::nullopt;
   }
 
   void set_reactor(grpc::ServerUnaryReactor *reactor, skinny::Event *res,
                    int acked_eid) {
+    std::shared_lock lk(kalock_);
     if (kathread) kathread->set_reactor(reactor, res, acked_eid);
   }
 
   void block_until_event_acked(int eid) {
+    std::shared_lock lk(kalock_);
     if (kathread) kathread->block_until_event_acked(eid);
   }
 
@@ -177,6 +184,7 @@ class Entry {
   static std::atomic<int> inline next_id{0};
   const std::function<void(int)> &cb;
   std::unique_ptr<KAThread> kathread;
+  std::shared_mutex kalock_;
 };
 
 class Db {

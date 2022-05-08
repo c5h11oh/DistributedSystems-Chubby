@@ -11,6 +11,7 @@
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
+#include <exception>
 #include <functional>
 #include <future>
 #include <iostream>
@@ -23,6 +24,8 @@
 #include "grpcpp/channel.h"
 #include "grpcpp/create_channel.h"
 #include "grpcpp/security/credentials.h"
+#include "includes/diagnostic.grpc.pb.h"
+#include "includes/diagnostic.pb.h"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
 #include "srv_config.h"
@@ -272,6 +275,7 @@ class SkinnyClient::impl {
       }
     }
     assert(false);
+    std::terminate();
   }
 
   void change_server(int server_id) {
@@ -322,3 +326,28 @@ void SkinnyClient::Release(int fh) { return pImpl->Release(fh); }
 bool SkinnyClient::Acquire(int fh, bool ex) { return pImpl->Acquire(fh, ex); }
 void SkinnyClient::Close(int fh) { return pImpl->Close(fh); }
 void SkinnyClient::Delete(int fh) { return pImpl->Delete(fh); }
+
+SkinnyDiagnosticClient::SkinnyDiagnosticClient() {
+  for (auto &[host, port] : SRV_CONFIG) {
+    stubs_.push_back(diagnostic::Diagnostic::NewStub(
+        grpc::CreateChannel(host + ":" + std::to_string(port + 1),
+                            grpc::InsecureChannelCredentials())));
+  }
+}
+
+int SkinnyDiagnosticClient::GetLeader() {
+  using namespace std::chrono_literals;
+  int idx = 0;
+  while (true) {
+    diagnostic::Empty req;
+    diagnostic::Leader res;
+    ClientContext context;
+    auto deadline = std::chrono::system_clock::now() + 1s;
+    context.set_deadline(deadline);
+    grpc::Status status = stubs_[idx]->GetLeader(&context, req, &res);
+    if (status.ok()) {
+      return res.leader();
+    }
+    idx = (idx + 1) % stubs_.size();
+  }
+}

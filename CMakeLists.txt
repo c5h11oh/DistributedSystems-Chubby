@@ -39,7 +39,7 @@ set(ASIO_INCLUDE_DIR ${asio_SOURCE_DIR}/asio/include)
 fetchcontent_makeavailable(nuraft)
 
 
-set(PROTOBUF_SRC "protos/skinny.proto")
+set(PROTOBUF_SRC "protos/skinny.proto" "protos/diagnostic.proto")
 set(PROTOBUF_DST "")
 set(PROTOBUF_ABS_SRC "")
 set(PROTOBUF_EXT ".grpc.pb.cc" ".grpc.pb.h" ".pb.cc" ".pb.h")

@@ -267,6 +267,7 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
       return reactor;
     }
     auto session = sdb_->find_session(req->session_id());
+    assert(session != nullptr);
     std::cout << "keepalive" << std::endl;
     session->set_reactor(reactor, res,
                          req->has_acked_event() ? req->acked_event() : -1);

@@ -6,7 +6,7 @@ import random
 from skinny_client import SkinnyClient
 
 
-def test_many_writes():
+def test_many_writes(cluster):
     a = SkinnyClient()
     fh = a.Open("/test")
     for _ in range(2):

@@ -21,4 +21,7 @@ PYBIND11_MODULE(pyclientlib, m) {
       .def("Acquire", &SkinnyClient::Acquire)
       .def("Release", &SkinnyClient::Release)
       .def("Delete", &SkinnyClient::Delete);
+  py::class_<SkinnyDiagnosticClient>(m, "SkinnyDiagnosticClient")
+      .def(py::init())
+      .def("GetLeader", &SkinnyDiagnosticClient::GetLeader);
 }

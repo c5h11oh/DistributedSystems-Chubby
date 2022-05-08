@@ -18,11 +18,26 @@
 #include "SkinnyImpl.cpp"
 #include "StateMachine.cpp"
 #include "in_memory_state_mgr.hxx"
+#include "includes/diagnostic.grpc.pb.h"
+#include "includes/diagnostic.pb.h"
 #include "libnuraft/nuraft.hxx"
 #include "libnuraft/srv_config.hxx"
 #include "logger_wrapper.hxx"
 #include "raft_server.hxx"
 #include "srv_config.h"
+
+class DiagnosticImpl final : public diagnostic::Diagnostic::Service {
+ public:
+  DiagnosticImpl(std::shared_ptr<nuraft::raft_server> raft) : raft_(raft){};
+
+ private:
+  grpc::Status GetLeader(ServerContext *context, const diagnostic::Empty *,
+                         diagnostic::Leader *res) override {
+    res->set_leader(raft_->get_leader());
+    return Status::OK;
+  }
+  std::shared_ptr<nuraft::raft_server> raft_;
+};
 
 auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
                std::shared_ptr<DataStore> ds,
@@ -31,6 +46,7 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
       "localhost:" + std::to_string(std::get<1>(SRV_CONFIG[node_id]) + 1));
   SkinnyImpl service(raft, ds, sdb);
   SkinnyCbImpl cbservice(raft, sdb);
+  DiagnosticImpl diagnostic(raft);
   grpc::ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
@@ -42,6 +58,7 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
   // clients. In this case it corresponds to an *synchronous* service.
   builder.RegisterService(&service);
   builder.RegisterService(&cbservice);
+  builder.RegisterService(&diagnostic);
   // Finally assemble the server.
   std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
   std::cout << "Server listening on " << server_address << std::endl;
