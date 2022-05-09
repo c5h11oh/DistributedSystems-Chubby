@@ -41,7 +41,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>> r) {
     if (r->get_accepted() && r->get_result_code() == nuraft::OK) {
       action::Response res(*r->get());
-      if (res.res == 0) {
+      if (res.res >= 0) {
         return Status::OK;
       } else {
         return Status(grpc::StatusCode::ABORTED, res.msg);

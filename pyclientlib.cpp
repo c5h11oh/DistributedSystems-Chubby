@@ -10,7 +10,7 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(pyclientlib, m) {
   py::class_<SkinnyClient>(m, "SkinnyClient")
-      .def(py::init())
+      .def(py::init(), py::call_guard<py::gil_scoped_release>())
       .def("Open", &SkinnyClient::Open,
            py::call_guard<py::gil_scoped_release>(), py::arg("path"),
            py::arg("cb") = std::nullopt)
@@ -22,7 +22,7 @@ PYBIND11_MODULE(pyclientlib, m) {
       .def("SetContent", &SkinnyClient::SetContent,
            py::call_guard<py::gil_scoped_release>())
       .def("GetContent", [](SkinnyClient& sc,
-                            int fh) { return py::bytes(sc.GetContent(fh)); })
+                            int fh) { return py::bytes(sc.GetContent(fh)); },py::call_guard<py::gil_scoped_release>())
       .def("TryAcquire", &SkinnyClient::TryAcquire,
            py::call_guard<py::gil_scoped_release>())
       .def("Acquire", &SkinnyClient::Acquire,

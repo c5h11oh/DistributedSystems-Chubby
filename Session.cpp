@@ -56,9 +56,7 @@ class KAThread {
                 // wake due to new keep alive => do nothing
               } else if (ret == std::cv_status::timeout) {
                 // no active keepalive and timeout => call expired callback
-                cv_lock_.unlock();
                 std::invoke(expire_cb_, sid_);
-                cv_lock_.lock();
               }
               // Other cases:
               // 1. no active keep alive but got event => do nothing

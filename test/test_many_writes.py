@@ -1,4 +1,3 @@
-# import skinny_client
 import logging
 import time
 import string
