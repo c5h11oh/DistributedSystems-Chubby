@@ -150,16 +150,18 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     }
     auto key = session->fh_to_key(req->fh());
     auto &meta = ds_->at(key).first;
-    std::lock_guard<std::mutex> guard(meta.mutex);
-    if (session->handle_inum(req->fh()) != meta.instance_num) {
-      res->set_res(-1);
-      res->set_msg("Instance num mismatch");
-      return Status::OK;
-    }
-    if (!meta.file_exists) {
-      res->set_res(-2);
-      res->set_msg("File does not exist");
-      return Status::OK;
+    {
+      std::lock_guard<std::mutex> guard(meta.mutex);
+      if (session->handle_inum(req->fh()) != meta.instance_num) {
+        res->set_res(-1);
+        res->set_msg("Instance num mismatch");
+        return Status::OK;
+      }
+      if (!meta.file_exists) {
+        res->set_res(-2);
+        res->set_msg("File does not exist");
+        return Status::OK;
+      }
     }
 
     action::AcqAction action(req->session_id(), req->fh(), req->ex());
@@ -168,10 +170,12 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       return status;
     }
     action::Response sm_result(*raft_ret->get());
-    if (sm_result.res == -1)
+    if (sm_result.res == -1) {
       return Status(
           static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
           sm_result.msg);
+    }
+
     res->set_res(sm_result.res);
     res->set_msg(sm_result.msg);
     return Status::OK;
@@ -192,26 +196,27 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     }
     auto key = session->fh_to_key(req->fh());
     auto &meta = ds_->at(key).first;
-    std::unique_lock<std::mutex> ulock(meta.mutex);
+    {
+      std::unique_lock<std::mutex> ulock(meta.mutex);
 
-    if (req->ex())
-      meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
-    else
-      meta.cv.wait(ulock, [&] {
-        return meta.lock_owners.empty() || !meta.is_locked_ex;
-      });
+      if (req->ex())
+        meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
+      else
+        meta.cv.wait(ulock, [&] {
+          return meta.lock_owners.empty() || !meta.is_locked_ex;
+        });
 
-    if (session->handle_inum(req->fh()) != meta.instance_num) {
-      res->set_res(-1);
-      res->set_msg("Instance num mismatch");
-      return Status::OK;
+      if (session->handle_inum(req->fh()) != meta.instance_num) {
+        res->set_res(-1);
+        res->set_msg("Instance num mismatch");
+        return Status::OK;
+      }
+      if (!meta.file_exists) {
+        res->set_res(-2);
+        res->set_msg("File does not exist");
+        return Status::OK;
+      }
     }
-    if (!meta.file_exists) {
-      res->set_res(-2);
-      res->set_msg("File does not exist");
-      return Status::OK;
-    }
-
     action::AcqAction action(req->session_id(), req->fh(), req->ex());
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
@@ -303,8 +308,11 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
       return reactor;
     }
     auto session = sdb_->find_session(req->session_id());
-    assert(session != nullptr);
-    std::cout << "keepalive" << std::endl;
+    if (!session) {
+      reactor->Finish(Status::CANCELLED);
+      return reactor;
+    }
+    // std::cout << "keepalive" << std::endl;
     session->set_reactor(reactor, res,
                          req->has_acked_event() ? req->acked_event() : -1);
     return reactor;
