@@ -7,7 +7,7 @@ import logging
 import sys
 # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
-NUM_PROC = 100
+NUM_PROC = 1000
 barrier = Barrier(NUM_PROC)
 barrier2 = Barrier(NUM_PROC)
 leader_written = Event()

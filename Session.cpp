@@ -25,8 +25,9 @@ class KAThread {
         expire_cb_(expire_cb),
         t_([this] {
           using namespace std::chrono_literals;
+          std::mutex lock;
           while (true) {
-            std::unique_lock ul(cv_lock_);
+            std::unique_lock ul(lock);
             auto ret = cv_.wait_for(ul, 1s);
             // will wake if received new keepalive, or new event, or cancelled
             // or timeout
@@ -62,8 +63,8 @@ class KAThread {
               }
               // Other cases:
               // 1. no active keep alive but got event => do nothing
-              // 2. no active keep alive and received new keepalive => not gonna
-              // happen
+              // 2. no active keep alive and received new keepalive => not
+              // gonna happen
             }
           }
         }),
@@ -109,8 +110,7 @@ class KAThread {
   }
 
  private:
-  std::thread t_;
-  std::mutex reactor_lock_, event_queue_lock_, cv_lock_, us_lock_;
+  std::mutex reactor_lock_, event_queue_lock_, us_lock_;
   std::condition_variable cv_, ack_event_cv_;
   std::atomic<bool> cancelled_;
   grpc::ServerUnaryReactor *reactor_;
@@ -120,6 +120,7 @@ class KAThread {
   skinny::Event *res_;
   const std::function<void(int)> &expire_cb_;
   int sid_;
+  std::thread t_;
 
   void cancel() {
     cancelled_.store(1);

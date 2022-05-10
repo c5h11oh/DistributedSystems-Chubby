@@ -20,7 +20,7 @@ async def test_concurrent_lock_release(cluster: Cluster):
     fh = a.Open("/test")
     assert a.TryAcquire(fh, True) == True
 
-    NUM_THREADS = 100
+    NUM_THREADS = 1000
     barrier = threading.Barrier(NUM_THREADS + 1)
     barrier2 = threading.Barrier(NUM_THREADS)
     get_lock_counter = 0
