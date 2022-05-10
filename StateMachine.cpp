@@ -134,33 +134,31 @@ class StateMachine : public state_machine {
     auto session = sdb_->find_session(a.session_id);
     auto key = session->fh_to_key(a.fh);
     auto& meta = ds_->at(key).first;
-    {
-      std::lock_guard<std::mutex> guard(meta.mutex);
-      if (a.ex) {  // Lock in exclusive mode
-        if (meta.lock_owners.empty()) {
-          meta.lock_owners.insert(session->id);
-          meta.is_locked_ex = true;
-          meta.lock_gen_num++;
-          puts("Successfully get lock");
-          return action::Response(0, "").serialize();
-        } else {
-          puts("Failed to get lock");
-          return action::Response(1, "fail to acquire").serialize();
-        }
-      } else {  // Lock in shared mode
-        if (meta.lock_owners.empty() || !meta.is_locked_ex) {
-          if (meta.lock_owners.empty()) {
-            meta.is_locked_ex = false;  // first reader needs to set it
-            meta.lock_gen_num++;
-          }
-          meta.lock_owners.insert(session->id);
 
-          puts("Successfully get lock");
-          return action::Response(0, "").serialize();
-        } else {
-          puts("Failed to get lock");
-          return action::Response(1, "fail to acquire").serialize();
+    if (a.ex) {  // Lock in exclusive mode
+      if (meta.lock_owners.empty()) {
+        meta.lock_owners.insert(session->id);
+        meta.is_locked_ex = true;
+        meta.lock_gen_num++;
+        puts("Successfully get lock");
+        return action::Response(0, "").serialize();
+      } else {
+        puts("Failed to get lock");
+        return action::Response(1, "fail to acquire").serialize();
+      }
+    } else {  // Lock in shared mode
+      if (meta.lock_owners.empty() || !meta.is_locked_ex) {
+        if (meta.lock_owners.empty()) {
+          meta.is_locked_ex = false;  // first reader needs to set it
+          meta.lock_gen_num++;
         }
+        meta.lock_owners.insert(session->id);
+
+        puts("Successfully get lock");
+        return action::Response(0, "").serialize();
+      } else {
+        puts("Failed to get lock");
+        return action::Response(1, "fail to acquire").serialize();
       }
     }
   }

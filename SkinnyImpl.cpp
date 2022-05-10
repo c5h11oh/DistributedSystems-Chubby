@@ -150,18 +150,16 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     }
     auto key = session->fh_to_key(req->fh());
     auto &meta = ds_->at(key).first;
-    {
-      std::lock_guard<std::mutex> guard(meta.mutex);
-      if (session->handle_inum(req->fh()) != meta.instance_num) {
-        res->set_res(-1);
-        res->set_msg("Instance num mismatch");
-        return Status::OK;
-      }
-      if (!meta.file_exists) {
-        res->set_res(-2);
-        res->set_msg("File does not exist");
-        return Status::OK;
-      }
+    std::lock_guard<std::mutex> guard(meta.mutex);
+    if (session->handle_inum(req->fh()) != meta.instance_num) {
+      res->set_res(-1);
+      res->set_msg("Instance num mismatch");
+      return Status::OK;
+    }
+    if (!meta.file_exists) {
+      res->set_res(-2);
+      res->set_msg("File does not exist");
+      return Status::OK;
     }
 
     action::AcqAction action(req->session_id(), req->fh(), req->ex());
@@ -195,27 +193,27 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     }
     auto key = session->fh_to_key(req->fh());
     auto &meta = ds_->at(key).first;
-    {
-      std::unique_lock<std::mutex> ulock(meta.mutex);
 
-      if (req->ex())
-        meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
-      else
-        meta.cv.wait(ulock, [&] {
-          return meta.lock_owners.empty() || !meta.is_locked_ex;
-        });
+    std::unique_lock<std::mutex> ulock(meta.mutex);
 
-      if (session->handle_inum(req->fh()) != meta.instance_num) {
-        res->set_res(-1);
-        res->set_msg("Instance num mismatch");
-        return Status::OK;
-      }
-      if (!meta.file_exists) {
-        res->set_res(-2);
-        res->set_msg("File does not exist");
-        return Status::OK;
-      }
+    if (req->ex())
+      meta.cv.wait(ulock, [&] { return meta.lock_owners.empty(); });
+    else
+      meta.cv.wait(ulock, [&] {
+        return meta.lock_owners.empty() || !meta.is_locked_ex;
+      });
+
+    if (session->handle_inum(req->fh()) != meta.instance_num) {
+      res->set_res(-1);
+      res->set_msg("Instance num mismatch");
+      return Status::OK;
     }
+    if (!meta.file_exists) {
+      res->set_res(-2);
+      res->set_msg("File does not exist");
+      return Status::OK;
+    }
+
     action::AcqAction action(req->session_id(), req->fh(), req->ex());
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
