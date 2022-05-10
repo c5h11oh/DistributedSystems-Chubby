@@ -1,18 +1,30 @@
-from pickle import TRUE
 from skinny_client import SkinnyClient
 from conftest import Cluster
-from collections import defaultdict
 import logging
+import multiprocessing
 
+
+def clientA(event, no):
+    a = SkinnyClient()
+    afh = a.Open("/test")
+    a.SetContent(afh, "abc")
+    event.set()
+    no.wait()
 
 async def test_client_dead(cluster: Cluster):
-    a = SkinnyClient()
+    event = multiprocessing.Event()
+    no = multiprocessing.Event()
+    p = multiprocessing.Process(target=clientA, args=[event, no])
+    p.start()
+    event.wait()
     b = SkinnyClient()
-    a.TEST_set_no_implicit_end_session_on_destruct(True)
-    afh = a.Open("/test")
     bfh = b.Open("/test")
-    a.SetContent(afh, "abc")
-    del a
     assert b.GetContent(bfh) == b"abc"
+    p.terminate()    
     b.SetContent(bfh, "efg")
     assert b.GetContent(bfh) == b"efg"
+
+if __name__=="__main__":
+    import asyncio
+    asyncio.run(test_client_dead(None))
+

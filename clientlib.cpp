@@ -45,13 +45,11 @@ class SkinnyClient::impl {
         }))) {}
 
   ~impl() {
-    if (!TEST_no_implicit_end_session_on_destruct_) {
-      ClientContext context;
-      skinny::SessionId req;
-      skinny::Empty res;
-      req.set_session_id(session_id);
-      stub_->EndSession(&context, req, &res);
-    }
+    ClientContext context;
+    skinny::SessionId req;
+    skinny::Empty res;
+    req.set_session_id(session_id);
+    stub_->EndSession(&context, req, &res);
     cancelled_.store(true);
     cv_.notify_one();
     kathread.join();
@@ -194,9 +192,6 @@ class SkinnyClient::impl {
     assert(status.ok());
   }
 
-  void TEST_set_no_implicit_end_session_on_destruct(bool val) {
-    TEST_no_implicit_end_session_on_destruct_ = val;
-  }
 
  private:
   grpc::Status InvokeRpc(std::function<grpc::Status()> &&fun) {
@@ -321,7 +316,6 @@ class SkinnyClient::impl {
   std::atomic<bool> has_conn_;
   std::atomic<bool> cancelled_;
   std::condition_variable cv_;
-  bool TEST_no_implicit_end_session_on_destruct_;
 
   std::thread kathread;
 };
@@ -347,9 +341,6 @@ void SkinnyClient::Release(int fh) { return pImpl->Release(fh); }
 bool SkinnyClient::Acquire(int fh, bool ex) { return pImpl->Acquire(fh, ex); }
 void SkinnyClient::Close(int fh) { return pImpl->Close(fh); }
 void SkinnyClient::Delete(int fh) { return pImpl->Delete(fh); }
-void SkinnyClient::TEST_set_no_implicit_end_session_on_destruct(bool val) {
-  return pImpl->TEST_set_no_implicit_end_session_on_destruct(val);
-}
 
 SkinnyDiagnosticClient::SkinnyDiagnosticClient() {
   for (auto &[host, port] : SRV_CONFIG) {

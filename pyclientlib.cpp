@@ -32,9 +32,7 @@ PYBIND11_MODULE(pyclientlib, m) {
       .def("Release", &SkinnyClient::Release,
            py::call_guard<py::gil_scoped_release>())
       .def("Delete", &SkinnyClient::Delete,
-           py::call_guard<py::gil_scoped_release>())
-      .def("TEST_set_no_implicit_end_session_on_destruct",
-           &SkinnyClient::TEST_set_no_implicit_end_session_on_destruct);
+           py::call_guard<py::gil_scoped_release>());
   py::class_<SkinnyDiagnosticClient>(m, "SkinnyDiagnosticClient")
       .def(py::init())
       .def("GetLeader", &SkinnyDiagnosticClient::GetLeader);

@@ -7,7 +7,7 @@ import logging
 import time
 from typing import List
 from skinny_client import SkinnyDiagnosticClient
-
+import multiprocessing
 
 server_addrs = [
     "127.0.0.1",
@@ -21,6 +21,7 @@ BIN_DIR = "debug"
 
 @pytest.fixture(scope="session", autouse=True)
 async def scp():
+    multiprocessing.set_start_method("spawn")
     asyncssh.set_log_level(100)
     build_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", BIN_DIR)
     for s in server_addrs:
