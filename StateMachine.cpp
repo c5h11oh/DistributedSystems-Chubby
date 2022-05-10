@@ -140,10 +140,8 @@ class StateMachine : public state_machine {
         meta.lock_owners.insert(session->id);
         meta.is_locked_ex = true;
         meta.lock_gen_num++;
-        puts("Successfully get lock");
         return action::Response(0, "").serialize();
       } else {
-        puts("Failed to get lock");
         return action::Response(1, "fail to acquire").serialize();
       }
     } else {  // Lock in shared mode
@@ -185,17 +183,14 @@ class StateMachine : public state_machine {
   int release_lock(int session_id, int fh) {
     auto session = sdb_->find_session(session_id);
     auto& [meta, content] = ds_->at(session->fh_to_key(fh));
-    bool need_notify, released;
-    {
-      std::lock_guard lg(meta.mutex);
-      if (!meta.file_exists) return -2;
-      released = meta.lock_owners.erase(session_id);
-      std::cout << "sess " << session_id << " rel lock @ "
-                << session->fh_to_key(fh) << ": " << std::boolalpha << released
-                << std::endl;
-      need_notify = meta.lock_owners.empty();
-    }
-    if (need_notify) {
+    bool released;
+
+    if (!meta.file_exists) return -2;
+    released = meta.lock_owners.erase(session_id);
+    std::cout << "sess " << session_id << " rel lock @ "
+              << session->fh_to_key(fh) << ": " << std::boolalpha << released
+              << std::endl;
+    if (meta.lock_owners.empty()) {
       meta.cv.notify_all();  // If a EX lock is released, *all* waiting SH reqs
       // should acquire the lock
     }

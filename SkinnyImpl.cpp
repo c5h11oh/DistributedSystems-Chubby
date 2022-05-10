@@ -229,6 +229,9 @@ class SkinnyImpl final : public skinny::Skinny::Service {
 
   Status Release(ServerContext *context, const skinny::LockRelReq *req,
                  skinny::Response *res) override {
+    auto session = sdb_->find_session(req->session_id());
+    auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
+    std::lock_guard lg(meta.mutex);
     action::RelAction action(req->session_id(), req->fh());
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
