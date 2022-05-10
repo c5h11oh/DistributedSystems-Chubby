@@ -175,7 +175,6 @@ class SkinnyImpl final : public skinny::Skinny::Service {
           static_cast<grpc::StatusCode>(skinny::ErrorCode::LOCK_RELATED),
           sm_result.msg);
     }
-
     res->set_res(sm_result.res);
     res->set_msg(sm_result.msg);
     return Status::OK;

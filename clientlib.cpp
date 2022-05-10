@@ -45,11 +45,13 @@ class SkinnyClient::impl {
         }))) {}
 
   ~impl() {
-    ClientContext context;
-    skinny::SessionId req;
-    skinny::Empty res;
-    req.set_session_id(session_id);
-    stub_->EndSession(&context, req, &res);
+    if (!TEST_no_implicit_end_session_on_destruct_) {
+      ClientContext context;
+      skinny::SessionId req;
+      skinny::Empty res;
+      req.set_session_id(session_id);
+      stub_->EndSession(&context, req, &res);
+    }
     cancelled_.store(true);
     cv_.notify_one();
     kathread.join();
@@ -145,6 +147,8 @@ class SkinnyClient::impl {
       ClientContext context;
       return stub_->TryAcquire(&context, req, &res);
     });
+    // std::cout << status.error_code() << ": " << status.error_message() <<
+    // std::endl;
     assert(status.ok());
     return (res.res() == 0);
   }
@@ -188,6 +192,10 @@ class SkinnyClient::impl {
       return stub_->Delete(&context, req, &res);
     });
     assert(status.ok());
+  }
+
+  void TEST_set_no_implicit_end_session_on_destruct(bool val) {
+    TEST_no_implicit_end_session_on_destruct_ = val;
   }
 
  private:
@@ -282,7 +290,7 @@ class SkinnyClient::impl {
       if (status.ok()) {
         session_id = res.session_id();
         has_conn_ = true;
-        std::cerr << "session id: " << session_id << std::endl;
+        // std::cerr << "session id: " << session_id << std::endl;
         return;
       }
     }
@@ -313,6 +321,7 @@ class SkinnyClient::impl {
   std::atomic<bool> has_conn_;
   std::atomic<bool> cancelled_;
   std::condition_variable cv_;
+  bool TEST_no_implicit_end_session_on_destruct_;
 
   std::thread kathread;
 };
@@ -338,6 +347,9 @@ void SkinnyClient::Release(int fh) { return pImpl->Release(fh); }
 bool SkinnyClient::Acquire(int fh, bool ex) { return pImpl->Acquire(fh, ex); }
 void SkinnyClient::Close(int fh) { return pImpl->Close(fh); }
 void SkinnyClient::Delete(int fh) { return pImpl->Delete(fh); }
+void SkinnyClient::TEST_set_no_implicit_end_session_on_destruct(bool val) {
+  return pImpl->TEST_set_no_implicit_end_session_on_destruct(val);
+}
 
 SkinnyDiagnosticClient::SkinnyDiagnosticClient() {
   for (auto &[host, port] : SRV_CONFIG) {

@@ -23,6 +23,7 @@ class SkinnyClient {
   bool Acquire(int fh, bool ex);
   void Release(int fh);
   void Delete(int fh);
+  void TEST_set_no_implicit_end_session_on_destruct(bool val);
 
  private:
   class impl;

@@ -55,6 +55,8 @@ class KAThread {
                 }
                 // wake due to new keep alive => do nothing
               } else if (ret == std::cv_status::timeout) {
+                std::cout << "calling expire callback" << std::endl;
+                cancel();
                 // no active keepalive and timeout => call expired callback
                 std::invoke(expire_cb_, sid_);
               }
