@@ -38,3 +38,7 @@ class FileMetaData {
 
 using DataStore =
     std::unordered_map<std::string, std::pair<FileMetaData, std::string>>;
+
+const std::string SESSION_NOT_FOUND_STR = "Session Not Found";
+const grpc::Status SESSION_NOT_FOUND_STATUS =
+    grpc::Status(grpc::StatusCode::CANCELLED, SESSION_NOT_FOUND_STR);

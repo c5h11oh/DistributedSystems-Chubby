@@ -88,8 +88,8 @@ class SkinnyImpl final : public skinny::Skinny::Service {
           static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER),
           std::to_string(raft_->get_leader()));
     }
-    // TODO
     auto session = sdb_->find_session(req->session_id());
+    if (!session) return SESSION_NOT_FOUND_STATUS;
     auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
     res->set_content(content);
     return Status::OK;
@@ -103,7 +103,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
       return status;
     }
     auto session = sdb_->find_session(req->session_id());
-    assert(session != nullptr);
+    if (!session) return SESSION_NOT_FOUND_STATUS;
     auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
     notify_events(meta);
     return Status::OK;
@@ -143,11 +143,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   Status TryAcquire(ServerContext *context, const skinny::LockAcqReq *req,
                     skinny::Response *res) override {
     auto session = sdb_->find_session(req->session_id());
-    if (!session) {
-      res->set_res(-3);
-      res->set_msg("Session not found");
-      return Status::OK;
-    }
+    if (!session) return SESSION_NOT_FOUND_STATUS;
     auto key = session->fh_to_key(req->fh());
     auto &meta = ds_->at(key).first;
     std::lock_guard<std::mutex> guard(meta.mutex);
@@ -186,11 +182,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   Status Acquire(ServerContext *context, const skinny::LockAcqReq *req,
                  skinny::Response *res) override {
     auto session = sdb_->find_session(req->session_id());
-    if (!session) {
-      res->set_res(-3);
-      res->set_msg("Session not found");
-      return Status::OK;
-    }
+    if (!session) return SESSION_NOT_FOUND_STATUS;
     auto key = session->fh_to_key(req->fh());
     auto &meta = ds_->at(key).first;
 
@@ -230,6 +222,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   Status Release(ServerContext *context, const skinny::LockRelReq *req,
                  skinny::Response *res) override {
     auto session = sdb_->find_session(req->session_id());
+    if (!session) return SESSION_NOT_FOUND_STATUS;
     auto &[meta, content] = ds_->at(session->fh_to_key(req->fh()));
     std::lock_guard lg(meta.mutex);
     action::RelAction action(req->session_id(), req->fh());
@@ -256,6 +249,7 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     res->set_res(r.res);
 
     auto session = sdb_->find_session(req->session_id());
+    if (!session) return SESSION_NOT_FOUND_STATUS;
     auto key = session->fh_to_key(req->fh());
     std::filesystem::path path{key};
     std::string parent_path = path.parent_path();
@@ -309,7 +303,7 @@ class SkinnyCbImpl final : public skinny::SkinnyCb::CallbackService {
     }
     auto session = sdb_->find_session(req->session_id());
     if (!session) {
-      reactor->Finish(Status::CANCELLED);
+      reactor->Finish(SESSION_NOT_FOUND_STATUS);
       return reactor;
     }
     // std::cout << "keepalive" << std::endl;

@@ -51,7 +51,7 @@ class StateMachine : public state_machine {
   ptr<buffer> apply_(action::OpenAction& a) {
     auto session = sdb_->find_session(a.session_id);
     if (!session) {
-      return action::OpenReturn(-1, "No such session", -1).serialize();
+      return action::OpenReturn(-1, SESSION_NOT_FOUND_STR, -1).serialize();
     }
     if (ds_->find(a.path) == ds_->end()) {
       ds_->operator[](a.path);
@@ -87,7 +87,7 @@ class StateMachine : public state_machine {
   ptr<buffer> apply_(action::CloseAction& a) {
     auto session = sdb_->find_session(a.session_id);
     if (!session) {
-      return action::Response(-1, "No such session").serialize();
+      return action::Response(-1, SESSION_NOT_FOUND_STR).serialize();
     }
     session->close_handle(a.fh);
     release_lock(a.session_id, a.fh);
@@ -103,7 +103,7 @@ class StateMachine : public state_machine {
   ptr<buffer> apply_(action::EndSessionAction& a) {
     auto session = sdb_->find_session(a.session_id);
     if (!session) {
-      return action::Response(-1, "No such session").serialize();
+      return action::Response(-1, SESSION_NOT_FOUND_STR).serialize();
     }
     for (int i = 0; i < session->handle_count(); ++i) {
       // does not matter as we are deleting session
@@ -117,7 +117,7 @@ class StateMachine : public state_machine {
   ptr<buffer> apply_(action::SetContentAction& a) {
     auto session = sdb_->find_session(a.session_id);
     if (!session) {
-      return action::Response(-1, "No such session").serialize();
+      return action::Response(-1, SESSION_NOT_FOUND_STR).serialize();
     }
     auto& [meta, content] = ds_->at(session->fh_to_key(a.fh));
     // if (session->handle_inum(req->fh()) != meta.instance_num)
@@ -132,6 +132,9 @@ class StateMachine : public state_machine {
   ptr<buffer> apply_(action::AcqAction& a) {
     // must acquired meta.mutex to be here
     auto session = sdb_->find_session(a.session_id);
+    if (!session) {
+      return action::Response(-1, SESSION_NOT_FOUND_STR).serialize();
+    }
     auto key = session->fh_to_key(a.fh);
     auto& meta = ds_->at(key).first;
 
@@ -182,6 +185,7 @@ class StateMachine : public state_machine {
   // 0: release succeed
   int release_lock(int session_id, int fh) {
     auto session = sdb_->find_session(session_id);
+    if (session == nullptr) return -1;
     auto& [meta, content] = ds_->at(session->fh_to_key(fh));
     bool released;
 
@@ -199,6 +203,9 @@ class StateMachine : public state_machine {
 
   ptr<buffer> apply_(action::DeleteAction& a) {
     auto session = sdb_->find_session(a.session_id);
+    if (session == nullptr) {
+      return action::Response({-1, SESSION_NOT_FOUND_STR}).serialize();
+    }
     auto key = session->fh_to_key(a.fh);
     auto& [meta, content] = ds_->at(key);
     if (meta.is_directory && !content.empty()) {
@@ -214,7 +221,9 @@ class StateMachine : public state_machine {
       meta.lock_gen_num = 0;
       for (const int& session_id : meta.lock_owners) {
         session = sdb_->find_session(session_id);
-        session->enqueue_event(a.fh);
+        if (session) {
+          session->enqueue_event(a.fh);
+        }
       }
       meta.lock_owners.clear();
     }

@@ -45,11 +45,13 @@ class SkinnyClient::impl {
         }))) {}
 
   ~impl() {
-    ClientContext context;
-    skinny::SessionId req;
-    skinny::Empty res;
-    req.set_session_id(session_id);
-    stub_->EndSession(&context, req, &res);
+    if (has_conn_.load()) {
+      ClientContext context;
+      skinny::SessionId req;
+      skinny::Empty res;
+      req.set_session_id(session_id);
+      stub_->EndSession(&context, req, &res);
+    }
     cancelled_.store(true);
     cv_.notify_one();
     kathread.join();
@@ -192,15 +194,16 @@ class SkinnyClient::impl {
     assert(status.ok());
   }
 
-
  private:
   grpc::Status InvokeRpc(std::function<grpc::Status()> &&fun) {
     while (true) {
       while (has_conn_.load() == 0) has_conn_.wait(0);
       grpc::Status status = std::invoke(fun);
-      if (!(status.error_code() ==
-                static_cast<grpc::StatusCode>(skinny::ErrorCode::NOT_LEADER) ||
-            status.error_code() == grpc::StatusCode::UNAVAILABLE)) {
+      if (!status.ok() && status.error_message() == SESSION_NOT_FOUND_STR) {
+        throw std::runtime_error(SESSION_NOT_FOUND_STR);
+      } else if (!(status.error_code() == static_cast<grpc::StatusCode>(
+                                              skinny::ErrorCode::NOT_LEADER) ||
+                   status.error_code() == grpc::StatusCode::UNAVAILABLE)) {
         return status;
       }
     }

@@ -23,7 +23,13 @@ PYBIND11_MODULE(pyclientlib, m) {
            py::call_guard<py::gil_scoped_release>())
       .def(
           "GetContent",
-          [](SkinnyClient& sc, int fh) { return py::bytes(sc.GetContent(fh)); },
+          [](SkinnyClient& sc, int fh) {
+            std::string result = sc.GetContent(fh);
+            {
+              py::gil_scoped_acquire acquire;
+              return py::bytes(result);
+            }
+          },
           py::call_guard<py::gil_scoped_release>())
       .def("TryAcquire", &SkinnyClient::TryAcquire,
            py::call_guard<py::gil_scoped_release>())
