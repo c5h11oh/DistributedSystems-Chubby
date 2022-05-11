@@ -12,9 +12,21 @@ namespace py = pybind11;
 PYBIND11_MODULE(pyclientlib, m) {
   py::class_<SkinnyClient>(m, "SkinnyClient")
       .def(py::init(), py::call_guard<py::gil_scoped_release>())
-      .def("Open", &SkinnyClient::Open,
-           py::call_guard<py::gil_scoped_release>(), py::arg("path"),
-           py::arg("cb") = std::nullopt)
+      .def(
+          "Open",
+          [](SkinnyClient& sc, std::string& path,
+             std::optional<std::function<void(int)>>& cb) {
+            if (cb) {
+              return sc.Open(path, [cb](int fh) {
+                py::gil_scoped_acquire acquire;
+                std::invoke(cb.value(), fh);
+              });
+            } else {
+              return sc.Open(path);
+            }
+          },
+          py::call_guard<py::gil_scoped_release>(), py::arg("path"),
+          py::arg("cb") = std::nullopt)
       .def("OpenDir", &SkinnyClient::OpenDir,
            py::call_guard<py::gil_scoped_release>(), py::arg("path"),
            py::arg("cb") = std::nullopt)
