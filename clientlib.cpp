@@ -249,15 +249,16 @@ class SkinnyClient::impl {
       }
       if (!res.has_fh()) return std::nullopt;
       new_eid = res.event_id();
-      if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
-        std::invoke(it->second, res.fh());
-      }
       {
         std::lock_guard lg(cache_lock_);
         if (auto it = cache_.find(res.fh()); it != cache_.end()) {
-          std::cout << "invalid cache " << res.fh() << std::endl;
+          std::cout << "invalidate cache " << res.fh() << std::endl;
           cache_.erase(it);
         }
+      }
+      if (auto it = callbacks.find(res.fh()); it != callbacks.end()) {
+        std::thread t(it->second, res.fh());
+        t.detach();
       }
     } else {
       has_conn_ = 0;
