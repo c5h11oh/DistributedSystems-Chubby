@@ -89,7 +89,8 @@ async def cluster():
         await serv.start()
         servs.append(serv)
     ret = Cluster(servs)
-    time.sleep(1)  # wait for server to start
+    time.sleep(2)  # wait for server to start
     yield ret
     for c in servs:
         await c.close()
+    time.sleep(2)
