@@ -28,7 +28,7 @@ class KAThread {
           std::mutex lock;
           while (true) {
             std::unique_lock ul(lock);
-            auto ret = cv_.wait_for(ul, 1s);
+            auto ret = cv_.wait_for(ul, 5s);
             // will wake if received new keepalive, or new event, or cancelled
             // or timeout
             if (cancelled_.load()) {

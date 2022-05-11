@@ -269,6 +269,10 @@ class SkinnyClient::impl {
       } else if (status.error_code() == grpc::StatusCode::CANCELLED &&
                  cancelled_.load()) {
         return std::nullopt;
+      } else if (!status.ok() &&
+                 status.error_message() == SESSION_NOT_FOUND_STR) {
+        cancelled_.store(true);
+        return std::nullopt;
       }
       change_server(next_server_id);
       std::cout << status.error_code() << ": " << status.error_message()

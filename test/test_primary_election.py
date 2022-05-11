@@ -5,6 +5,7 @@ from threading import Barrier, Thread, Event, Lock
 import logging
 import logging
 import sys
+
 # logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
 NUM_PROC = 1000
@@ -15,25 +16,25 @@ lock = Lock()
 
 whoiselected = [-1] * NUM_PROC
 
+
 def f(proc_no):
+    
     skinny = SkinnyClient()
-    fh = skinny.Open("/primary_file")
+    def callback(fh):
+        leader = int(skinny.GetContent(fh))
+        logging.info(f"{proc_no:2d}: leader is {leader}!")
+        lock.acquire()
+        whoiselected[proc_no] = leader
+        lock.release()
+
+    fh = skinny.Open("/primary_file", callback)
     barrier.wait()
     success = skinny.TryAcquire(fh, True)  # contend the exclusive lock
     if success:
         skinny.SetContent(fh, str(proc_no))
-        lock.acquire()
-        whoiselected[proc_no] = proc_no
-        lock.release()
-        leader_written.set()
         logging.info(f"{proc_no:2d}: lock acquired!")
-    else:
-        leader_written.wait()
-        lock.acquire()
-        whoiselected[proc_no] = int(skinny.GetContent(fh))
-        lock.release()
-        logging.info(f"{proc_no:2d}: lost. master is {whoiselected[proc_no]:2d}")
     barrier2.wait()
+
 
 async def test_primary_election(cluster: Cluster):
     proc = []
@@ -42,9 +43,13 @@ async def test_primary_election(cluster: Cluster):
         proc[-1].start()
     for p in proc:
         p.join()
+    print(whoiselected)
     for i in whoiselected:
+        assert i != -1
         assert i == whoiselected[0]
+
 
 if __name__ == "__main__":
     import asyncio
+
     asyncio.run(test_primary_election(None))
