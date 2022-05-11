@@ -4,7 +4,8 @@
 
 #include <optional>
 
-#include "clientlib.cpp"
+#include "clientlib.h"
+#include "clientlib_diagnostic.h"
 
 namespace py = pybind11;
 

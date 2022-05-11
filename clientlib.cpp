@@ -21,6 +21,7 @@
 #include <string>
 #include <thread>
 
+#include "clientlib_diagnostic.h"
 #include "grpcpp/channel.h"
 #include "grpcpp/create_channel.h"
 #include "grpcpp/security/credentials.h"

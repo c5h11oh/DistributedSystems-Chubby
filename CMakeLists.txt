@@ -65,7 +65,7 @@ add_custom_command(
   DEPENDS ${PROTOBUF_SRC} protoc grpc_cpp_plugin grpc++_reflection
 )
 
-pybind11_add_module(pyclientlib pyclientlib.cpp ${PROTOBUF_DST})
+pybind11_add_module(pyclientlib pyclientlib.cpp clientlib.cpp  ${PROTOBUF_DST})
 target_include_directories(pyclientlib PRIVATE ${pybind11_SOURCE_DIR}/include)
 target_link_libraries(pyclientlib PUBLIC grpc++)
 
