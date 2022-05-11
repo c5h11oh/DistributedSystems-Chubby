@@ -43,7 +43,7 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
                std::shared_ptr<DataStore> ds,
                std::shared_ptr<session::Db> sdb) {
   std::string server_address(
-      "localhost:" + std::to_string(std::get<1>(SRV_CONFIG[node_id]) + 1));
+      "0.0.0.0:" + std::to_string(std::get<1>(SRV_CONFIG[node_id]) + 1));
   SkinnyImpl service(raft, ds, sdb);
   SkinnyCbImpl cbservice(raft, sdb);
   DiagnosticImpl diagnostic(raft);
