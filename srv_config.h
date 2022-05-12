@@ -6,9 +6,14 @@
 
 #include "Session.cpp"
 
+std::string host_suffix{".skinnyclient.advosuwmadison-pg0.clemson.cloudlab.us"};
+
 // GRPC will be using raft port + 1
 static const std::vector<std::tuple<std::string, int>> SRV_CONFIG{
-    {"localhost", 10200}, {"localhost", 12010}, {"localhost", 10220}};
+    {"node0" + host_suffix, 10200}, {"node1" + host_suffix, 12010},
+    {"node2" + host_suffix, 10220}, {"node3" + host_suffix, 10220},
+    {"node4" + host_suffix, 10220},
+};
 
 namespace skinny {
 enum class ErrorCode { NOT_LEADER = 100, LOCK_RELATED = 101 };

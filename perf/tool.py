@@ -3,10 +3,11 @@ from os import system
 from threading import Thread
 import sys
 
-def ssh(node_num, cmd, save_output = False):
-    send_cmd = f"ssh -o \"StrictHostKeyChecking no\" node{node_num}{HOST_SUFFIX} {cmd}" + \
-                (f" > output_{node_num}" if save_output else "")
-    # send_cmd = f"ssh node{node_num}{HOST_SUFFIX} {cmd}" + \
+def ssh(node_num, cmd, save_output = False, bg = False):
+    # send_cmd = f"ssh -o \"StrictHostKeyChecking no\" node{node_num}{HOST_SUFFIX} \"{cmd}\"" + \
+    send_cmd = f"ssh node{node_num}{HOST_SUFFIX} \'( {cmd} )\'" + \
+                (f" > output_{node_num}" if save_output else "") + \
+                (f" &" if bg else "")
     print(send_cmd)
     system(send_cmd)
 
