@@ -237,9 +237,9 @@ class StateMachine : public state_machine {
 
     if (!meta.file_exists) return -2;
     released = meta.lock_owners.erase(session_id);
-    std::cout << "sess " << session_id << " rel lock @ "
-              << session->fh_to_key(fh) << ": " << std::boolalpha << released
-              << std::endl;
+    // std::cout << "sess " << session_id << " rel lock @ "
+    //           << session->fh_to_key(fh) << ": " << std::boolalpha << released
+    //           << std::endl;
     if (meta.lock_owners.empty()) {
       meta.cv.notify_all();  // If a EX lock is released, *all* waiting SH reqs
       // should acquire the lock
