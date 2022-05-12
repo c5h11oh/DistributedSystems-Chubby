@@ -1,14 +1,16 @@
+// Membership status demo
+
 #include <unistd.h>
 
 #include <iostream>
 #include <thread>
 
-#include "clientlib.h"
+#include "../clientlib.h"
 
 int main() {
   char hostname[1024];
   gethostname(hostname, 1023);
-  std::cout << "I am " << hostname << std::endl;
+  std::cout << "I am " << hostname << "\n=========\n";
 
   SkinnyClient a = SkinnyClient();
   int fh = a.OpenDir("/service", [&a](int fh) {

@@ -124,7 +124,6 @@ void notify_events(FileMetaData &meta, session::Db *sdb_) {
   for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
     auto session = sdb_->find_session(it->first);
     if (session && session->handle_inum(it->second) != -1) {
-      std::cout << "event" << std::endl;
       auto eid = session->enqueue_event(it->second);
       if (eid) {
         vt.emplace_back([session, eid = eid.value()]() {
