@@ -69,6 +69,7 @@ auto init_grpc(int node_id, std::shared_ptr<nuraft::raft_server> raft,
 auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
                std::shared_ptr<session::Db> sdb) {
   using namespace nuraft;
+  bool inited = false;
   const auto [host, port] = SRV_CONFIG[node_id];
   const auto endpoint = host + ":" + std::to_string(port);
   // Replace with your logger, state machine, and state manager.
@@ -85,8 +86,9 @@ auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
   params.return_method_ = raft_params::blocking;
   params.client_req_timeout_ = INT_MAX;
   auto opt = raft_server::init_options();
-  opt.raft_callback_ = [sdb](cb_func::Type type, cb_func::Param *) {
+  opt.raft_callback_ = [sdb, &inited](cb_func::Type type, cb_func::Param *) {
     if (type == cb_func::Type::BecomeLeader) {
+      if (inited) std::cout << "I am now the leader" << std::endl;
       sdb->start_kathread();
     }
     return cb_func::ReturnCode::Ok;
@@ -114,15 +116,16 @@ auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
       ret = server->get_srv_config(i);
     } while (ret == nullptr);
   }
+  inited = true;
 
   std::cout << "Leader: " << server->get_leader() << std::endl;
   return launcher;
 }
 
-void notify_events(FileMetaData &meta, session::Db *sdb_) {
+void notify_events(FileMetaData &meta, session::Db &sdb_) {
   std::vector<std::thread> vt;
   for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
-    auto session = sdb_->find_session(it->first);
+    auto session = sdb_.find_session(it->first);
     if (session && session->handle_inum(it->second) != -1) {
       auto eid = session->enqueue_event(it->second);
       if (eid) {
@@ -145,26 +148,26 @@ int main(int argc, char **argv) {
   const int node_id = atoi(argv[1]);
   auto datastore = std::make_shared<DataStore>();
   nuraft::ptr<nuraft::raft_server> raft = nullptr;
-  auto sdb = std::make_shared<session::Db>(
-      [&raft, &datastore](int sid, session::Db *db) {
-        if (!raft || !raft->is_leader()) return;
-        std::thread t([&raft, &datastore, sid, db]() {
-          action::EndSessionAction a(sid);
-          auto ret = raft->append_entries({a.serialize()});
-          if (ret->get_result_code() == nuraft::OK) {
-            nuraft::buffer_serializer bs(*ret->get());
-            if (bs.get_i32() != 0) return;
-            bs.get_str();
-            int size = bs.get_i32();
-            for (int i = 0; i < size; i++) {
-              auto &[meta, content] = datastore->at(bs.get_str());
-              notify_events(meta, db);
-            }
-          }
-        });
-        t.detach();
-        return;
-      });
+  std::shared_ptr<session::Db> sdb = nullptr;
+  sdb = std::make_shared<session::Db>([&raft, &datastore, &sdb](int sid) {
+    if (!raft || !raft->is_leader() || !sdb) return;
+    std::thread t([&raft, &datastore, sid, &sdb]() {
+      action::EndSessionAction a(sid);
+      auto ret = raft->append_entries({a.serialize()});
+      if (ret->get_result_code() == nuraft::OK) {
+        nuraft::buffer_serializer bs(*ret->get());
+        if (bs.get_i32() != 0) return;
+        bs.get_str();
+        int size = bs.get_i32();
+        for (int i = 0; i < size; i++) {
+          auto &[meta, content] = datastore->at(bs.get_str());
+          notify_events(meta, *sdb);
+        }
+      }
+    });
+    t.detach();
+    return;
+  });
 
   datastore->operator[]("/");
   datastore->at("/").first.file_exists = true;

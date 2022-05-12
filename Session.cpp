@@ -20,11 +20,9 @@ namespace session {
 class Db;
 class KAThread {
  public:
-  KAThread(int sid, const std::function<void(int, Db *)> &expire_cb,
-           Db *sdb_ptr)
+  KAThread(int sid, const std::function<void(int)> &expire_cb)
       : sid_(sid),
         expire_cb_(expire_cb),
-        sdb_ptr_(sdb_ptr),
         t_([this] {
           using namespace std::chrono_literals;
           std::mutex lock;
@@ -61,7 +59,7 @@ class KAThread {
                 std::cout << "calling expire callback" << std::endl;
                 cancel();
                 // no active keepalive and timeout => call expired callback
-                std::invoke(expire_cb_, sid_, sdb_ptr_);
+                std::invoke(expire_cb_, sid_);
               }
               // Other cases:
               // 1. no active keep alive but got event => do nothing
@@ -120,9 +118,8 @@ class KAThread {
   int event_id;
   std::unordered_set<int> acked_events;
   skinny::Event *res_;
-  const std::function<void(int, Db *)> &expire_cb_;
+  const std::function<void(int)> &expire_cb_;
   int sid_;
-  Db *sdb_ptr_;
   std::thread t_;
 
   void cancel() {
@@ -144,16 +141,14 @@ class Entry {
  public:
   int id;
 
-  Entry(const std::function<void(int, Db *)> &cb, Db *sdb_ptr)
-      : id(next_id.fetch_add(1, std::memory_order_relaxed)),
-        cb(cb),
-        sdb_ptr_(sdb_ptr) {}
+  Entry(const std::function<void(int)> &cb)
+      : id(next_id.fetch_add(1, std::memory_order_relaxed)), cb(cb) {}
 
   ~Entry() { std::cout << "Destruct session entry" << std::endl; }
 
   void start_kathread() {
     std::unique_lock lk(kalock_);
-    kathread = std::make_unique<KAThread>(id, cb, sdb_ptr_);
+    kathread = std::make_unique<KAThread>(id, cb);
   }
 
   int add_new_handle(std::string path, int instance_num) {
@@ -188,8 +183,7 @@ class Entry {
   std::vector<std::string> v;
   std::vector<int> inum;  // instance_num
   static std::atomic<int> inline next_id{0};
-  const std::function<void(int, Db *)> &cb;
-  Db *sdb_ptr_;
+  const std::function<void(int)> &cb;
   std::unique_ptr<KAThread> kathread;
   std::shared_mutex kalock_;
 };
@@ -197,13 +191,13 @@ class Entry {
 class Db {
   std::unordered_map<int, std::shared_ptr<Entry>> session_db;
   std::mutex db_lock;
-  std::function<void(int, Db *)> expire_cb_;
+  std::function<void(int)> expire_cb_;
 
  public:
-  Db(const std::function<void(int, Db *)> &cb) : expire_cb_(cb) {}
+  Db(const std::function<void(int)> &cb) : expire_cb_(cb) {}
 
   std::shared_ptr<Entry> create_session() {
-    auto session = std::make_shared<Entry>(expire_cb_, this);
+    auto session = std::make_shared<Entry>(expire_cb_);
     {
       std::lock_guard lg(db_lock);
       session_db[session->id] = session;
