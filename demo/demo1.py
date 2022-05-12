@@ -19,6 +19,8 @@ def main():
             print(c.Acquire(int(split[1]), True))
         elif split[0] == "unlock":
             print(c.Release(int(split[1])))
+        elif split[0] == "trylock":
+            print(c.TryAcquire(int(split[1]), True))
 
 
 if __name__ == "__main__":
