@@ -6,6 +6,7 @@ message OpenReq {
   int64 session_id = 1;
   string path = 2;
   bool is_directory = 3;
+  bool is_ephemeral = 4;
 }
 
 message CloseReq {

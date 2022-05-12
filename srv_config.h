@@ -27,13 +27,14 @@ class FileMetaData {
   bool is_locked_ex;
   std::mutex mutex;
   std::condition_variable cv;
-  std::list<std::pair<std::weak_ptr<session::Entry>, int>> subscribers;
+  std::unordered_map<int, int> subscribers;  // sessionid: fh
 
   bool file_exists;
   int instance_num;
   int content_gen_num;
   int lock_gen_num;
   bool is_directory;
+  bool is_ephemeral;
 };
 
 using DataStore =

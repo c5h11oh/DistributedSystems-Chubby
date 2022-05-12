@@ -15,21 +15,39 @@ PYBIND11_MODULE(pyclientlib, m) {
       .def(
           "Open",
           [](SkinnyClient& sc, std::string& path,
-             std::optional<std::function<void(int)>>& cb) {
+             std::optional<std::function<void(int)>>& cb, bool is_ephemeral) {
             if (cb) {
-              return sc.Open(path, [cb](int fh) {
-                py::gil_scoped_acquire acquire;
-                std::invoke(cb.value(), fh);
-              });
+              return sc.Open(
+                  path,
+                  [cb](int fh) {
+                    py::gil_scoped_acquire acquire;
+                    std::invoke(cb.value(), fh);
+                  },
+                  is_ephemeral);
             } else {
-              return sc.Open(path);
+              return sc.Open(path, std::nullopt, is_ephemeral);
             }
           },
           py::call_guard<py::gil_scoped_release>(), py::arg("path"),
-          py::arg("cb") = std::nullopt)
-      .def("OpenDir", &SkinnyClient::OpenDir,
-           py::call_guard<py::gil_scoped_release>(), py::arg("path"),
-           py::arg("cb") = std::nullopt)
+          py::arg("cb") = std::nullopt, py::arg("is_ephemeral") = false)
+      .def(
+          "OpenDir",
+          [](SkinnyClient& sc, std::string& path,
+             std::optional<std::function<void(int)>>& cb, bool is_ephemeral) {
+            if (cb) {
+              return sc.OpenDir(
+                  path,
+                  [cb](int fh) {
+                    py::gil_scoped_acquire acquire;
+                    std::invoke(cb.value(), fh);
+                  },
+                  is_ephemeral);
+            } else {
+              return sc.OpenDir(path, std::nullopt, is_ephemeral);
+            }
+          },
+          py::call_guard<py::gil_scoped_release>(), py::arg("path"),
+          py::arg("cb") = std::nullopt, py::arg("is_ephemeral") = false)
       .def("Close", &SkinnyClient::Close,
            py::call_guard<py::gil_scoped_release>())
       .def("SetContent", &SkinnyClient::SetContent,

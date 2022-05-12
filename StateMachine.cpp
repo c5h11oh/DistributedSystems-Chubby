@@ -61,6 +61,7 @@ class StateMachine : public state_machine {
     if (meta.file_exists == false) {
       meta.is_directory = a.is_directory;
     }
+    meta.is_ephemeral = a.is_ephemeral;
     // Update parent dir
     std::filesystem::path path = a.path;
     std::string parent_path = path.parent_path();
@@ -79,7 +80,7 @@ class StateMachine : public state_machine {
     }
     meta.file_exists = true;  // for previously deleted keys
     auto fh = session->add_new_handle(a.path, meta.instance_num);
-    meta.subscribers.emplace_back(session, fh);
+    meta.subscribers[session->id] = fh;
     action::OpenReturn ret(0, "OK", fh);
     return ret.serialize();
   }
@@ -87,11 +88,40 @@ class StateMachine : public state_machine {
   ptr<buffer> apply_(action::CloseAction& a) {
     auto session = sdb_->find_session(a.session_id);
     if (!session) {
-      return action::Response(-1, SESSION_NOT_FOUND_STR).serialize();
+      return action::CloseReturn(-1, SESSION_NOT_FOUND_STR, false, "")
+          .serialize();
     }
-    session->close_handle(a.fh);
+    auto ret = close_file_delete_ephermeral(*session, a.fh);
     release_lock(a.session_id, a.fh);
-    return action::Response(0, "OK").serialize();
+    return action::CloseReturn(0, "OK", !!ret, "").serialize();
+  }
+
+  std::optional<std::string> close_file_delete_ephermeral(
+      session::Entry& session, int fh) {
+    if (session.handle_inum(fh) == -1) return std::nullopt;
+    session.close_handle(fh);
+    std::string key = session.fh_to_key(fh);
+    auto& [meta, content] = ds_->at(key);
+
+    if (meta.subscribers.contains(session.id)) {
+      meta.subscribers.erase(session.id);
+      if (meta.subscribers.empty() && meta.is_ephemeral) {
+        std::filesystem::path path{key};
+        std::filesystem::path parent_path = path.parent_path();
+        auto& [parent_meta, parent_content] = ds_->at(parent_path);
+        {
+          std::lock_guard lg(parent_meta.mutex);
+          size_t pos = parent_content.find(std::string(1, '\0') +
+                                           std::string(path.filename()));
+          if (pos != std::string::npos) {
+            parent_content.erase(pos,
+                                 std::string(path.filename()).length() + 1);
+            return parent_path;
+          }
+        }
+      }
+    }
+    return std::nullopt;
   }
 
   ptr<buffer> apply_(action::StartSessionAction& a) {
@@ -105,13 +135,28 @@ class StateMachine : public state_machine {
     if (!session) {
       return action::Response(-1, SESSION_NOT_FOUND_STR).serialize();
     }
+    std::vector<std::string> parent_path;
+    const std::string ok = "OK";
+    int size =
+        sizeof(int32_t) + sizeof(ok.size()) + ok.size() + sizeof(int32_t);
     for (int i = 0; i < session->handle_count(); ++i) {
-      // does not matter as we are deleting session
-      // session->close_handle(i);
+      auto ret = close_file_delete_ephermeral(*session, i);
+      if (ret) {
+        parent_path.push_back(ret.value());
+        size += parent_path.size() + sizeof(parent_path.size());
+      }
       release_lock(a.session_id, i);
     }
     sdb_->delete_session(a.session_id);
-    return action::Response(0, "OK").serialize();
+    nuraft::ptr<nuraft::buffer> buf = nuraft::buffer::alloc(size);
+    nuraft::buffer_serializer bs(buf);
+    bs.put_i32(0);
+    bs.put_str(ok);
+    bs.put_i32(parent_path.size());
+    for (auto& s : parent_path) {
+      bs.put_str(s);
+    }
+    return buf;
   }
 
   ptr<buffer> apply_(action::SetContentAction& a) {
@@ -120,10 +165,10 @@ class StateMachine : public state_machine {
       return action::Response(-1, SESSION_NOT_FOUND_STR).serialize();
     }
     auto& [meta, content] = ds_->at(session->fh_to_key(a.fh));
-    // if (session->handle_inum(req->fh()) != meta.instance_num)
-    //   return Status(grpc::StatusCode::NOT_FOUND, "Instance num mismatch");
-    // if (!meta.file_exists)
-    //   return Status(grpc::StatusCode::NOT_FOUND, "File does not exist");
+    if (session->handle_inum(a.fh) != meta.instance_num)
+      return action::Response(-1, "Instance num mismatch").serialize();
+    if (!meta.file_exists)
+      return action::Response(-1, "File does not exist").serialize();
     content = a.content;
     return action::Response(0, "OK").serialize();
   }

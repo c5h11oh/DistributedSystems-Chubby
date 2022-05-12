@@ -118,20 +118,55 @@ auto init_raft(int node_id, std::shared_ptr<DataStore> ds,
   std::cout << "Leader: " << server->get_leader() << std::endl;
   return launcher;
 }
+
+void notify_events(FileMetaData &meta, session::Db *sdb_) {
+  std::vector<std::thread> vt;
+  for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
+    auto session = sdb_->find_session(it->first);
+    if (session && session->handle_inum(it->second) != -1) {
+      std::cout << "event" << std::endl;
+      auto eid = session->enqueue_event(it->second);
+      if (eid) {
+        vt.emplace_back([session, eid = eid.value()]() {
+          session->block_until_event_acked(eid);
+        });
+      }
+      it++;
+    } else {
+      it = meta.subscribers.erase(it);
+    }
+  }
+  for (auto &t : vt) {
+    t.join();
+  }
+}
+
 int main(int argc, char **argv) {
   assert(argc >= 2);
   const int node_id = atoi(argv[1]);
-  nuraft::ptr<nuraft::raft_server> raft = nullptr;
-  auto sdb = std::make_shared<session::Db>([&raft](int sid) {
-    if (!raft || !raft->is_leader()) return;
-    std::thread t([&raft, sid]() {
-      action::EndSessionAction a(sid);
-      auto ret = raft->append_entries({a.serialize()});
-    });
-    t.detach();
-    return;
-  });
   auto datastore = std::make_shared<DataStore>();
+  nuraft::ptr<nuraft::raft_server> raft = nullptr;
+  auto sdb = std::make_shared<session::Db>(
+      [&raft, &datastore](int sid, session::Db *db) {
+        if (!raft || !raft->is_leader()) return;
+        std::thread t([&raft, &datastore, sid, db]() {
+          action::EndSessionAction a(sid);
+          auto ret = raft->append_entries({a.serialize()});
+          if (ret->get_result_code() == nuraft::OK) {
+            nuraft::buffer_serializer bs(*ret->get());
+            if (bs.get_i32() != 0) return;
+            bs.get_str();
+            int size = bs.get_i32();
+            for (int i = 0; i < size; i++) {
+              auto &[meta, content] = datastore->at(bs.get_str());
+              notify_events(meta, db);
+            }
+          }
+        });
+        t.detach();
+        return;
+      });
+
   datastore->operator[]("/");
   datastore->at("/").first.file_exists = true;
   datastore->at("/").first.is_directory = true;

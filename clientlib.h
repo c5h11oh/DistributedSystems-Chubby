@@ -11,9 +11,11 @@ class SkinnyClient {
   ~SkinnyClient();
 
   int Open(const std::string &path,
-           const std::optional<std::function<void(int)>> &cb = std::nullopt);
+           const std::optional<std::function<void(int)>> &cb = std::nullopt,
+           bool is_ephemeral = false);
   int OpenDir(const std::string &path,
-              const std::optional<std::function<void(int)>> &cb = std::nullopt);
+              const std::optional<std::function<void(int)>> &cb = std::nullopt,
+              bool is_ephemeral = false);
   void Close(int fh);
   std::string GetContent(int fh);
   void SetContent(int fh, const std::string &content);

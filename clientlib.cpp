@@ -60,12 +60,13 @@ class SkinnyClient::impl {
 
   int Open(const std::string &path,
            const std::optional<std::function<void(int)>> &cb = std::nullopt,
-           bool is_directory = false) {
+           bool is_directory = false, bool is_ephemeral = false) {
     skinny::OpenReq req;
     skinny::Handle res;
     req.set_path(path);
     req.set_session_id(session_id);
     req.set_is_directory(is_directory);
+    req.set_is_ephemeral(is_ephemeral);
     auto status = InvokeRpc([&]() {
       ClientContext context;
       return stub_->Open(&context, req, &res);
@@ -100,10 +101,7 @@ class SkinnyClient::impl {
       std::lock_guard lg(cache_lock_);
       if (auto it = cache_.find(fh);
           has_conn_.load() == true && it != cache_.end()) {
-        std::cout << "Read from cache" << std::endl;
         return it->second;
-      } else {
-        std::cout << "Send read request" << std::endl;
       }
     }
     skinny::GetContentReq req;
@@ -252,7 +250,6 @@ class SkinnyClient::impl {
       {
         std::lock_guard lg(cache_lock_);
         if (auto it = cache_.find(res.fh()); it != cache_.end()) {
-          std::cout << "invalidate cache " << res.fh() << std::endl;
           cache_.erase(it);
         }
       }
@@ -332,12 +329,14 @@ class SkinnyClient::impl {
 SkinnyClient::SkinnyClient() { pImpl = std::make_unique<impl>(); };
 SkinnyClient::~SkinnyClient() = default;
 int SkinnyClient::Open(const std::string &path,
-                       const std::optional<std::function<void(int)>> &cb) {
-  return pImpl->Open(path, cb);
+                       const std::optional<std::function<void(int)>> &cb,
+                       bool is_ephemeral) {
+  return pImpl->Open(path, cb, false, is_ephemeral);
 };
 int SkinnyClient::OpenDir(const std::string &path,
-                          const std::optional<std::function<void(int)>> &cb) {
-  return pImpl->Open(path, cb, true);
+                          const std::optional<std::function<void(int)>> &cb,
+                          bool is_ephemeral) {
+  return pImpl->Open(path, cb, true, is_ephemeral);
 };
 std::string SkinnyClient::GetContent(int fh) { return pImpl->GetContent(fh); };
 void SkinnyClient::SetContent(int fh, const std::string &content) {

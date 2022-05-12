@@ -4,6 +4,7 @@ message OpenAction {
   int64 session_id = 1;
   string path = 2;
   int32 is_directory = 3;
+  int32 is_ephemeral = 4;
 }
 
 message CloseAction {
@@ -58,3 +59,9 @@ message StartSessionReturn {
   int64 session_id = 3;
 }
 
+message CloseReturn {
+  int32 res = 1;
+  string msg = 2;
+  int32 need_notify = 3;
+  string parent_path = 4;
+}

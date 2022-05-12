@@ -78,6 +78,11 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
     }
+    action::CloseReturn r(*raft_ret->get());
+    if (r.need_notify) {
+      auto &[meta, content] = ds_->at(r.parent_path);
+      notify_events(meta);
+    }
     return Status::OK;
   }
 
@@ -130,6 +135,14 @@ class SkinnyImpl final : public skinny::Skinny::Service {
     auto raft_ret = raft_->append_entries({action.serialize()});
     if (auto status = parse_raft_result(raft_ret); !status.ok()) {
       return status;
+    }
+    nuraft::buffer_serializer bs(*raft_ret->get());
+    bs.get_i32();
+    bs.get_str();
+    int size = bs.get_i32();
+    for (int i = 0; i < size; i++) {
+      auto &[meta, content] = ds_->at(bs.get_str());
+      notify_events(meta);
     }
     return Status::OK;
   }
@@ -261,12 +274,12 @@ class SkinnyImpl final : public skinny::Skinny::Service {
   void notify_events(FileMetaData &meta) {
     std::vector<std::thread> vt;
     for (auto it = meta.subscribers.begin(); it != meta.subscribers.end();) {
-      auto ptr = it->first.lock();
-      if (ptr && ptr->handle_inum(it->second) != -1) {
-        auto eid = ptr->enqueue_event(it->second);
+      auto session = sdb_->find_session(it->first);
+      if (session && session->handle_inum(it->second) != -1) {
+        auto eid = session->enqueue_event(it->second);
         if (eid) {
-          vt.emplace_back([ptr, eid = eid.value()]() {
-            ptr->block_until_event_acked(eid);
+          vt.emplace_back([session, eid = eid.value()]() {
+            session->block_until_event_acked(eid);
           });
         }
         it++;
