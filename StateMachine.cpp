@@ -93,7 +93,7 @@ class StateMachine : public state_machine {
     }
     auto ret = close_file_delete_ephermeral(*session, a.fh);
     release_lock(a.session_id, a.fh);
-    return action::CloseReturn(0, "OK", !!ret, "").serialize();
+    return action::CloseReturn(0, "OK", !!ret, ret.value()).serialize();
   }
 
   std::optional<std::string> close_file_delete_ephermeral(
@@ -106,6 +106,7 @@ class StateMachine : public state_machine {
     if (meta.subscribers.contains(session.id)) {
       meta.subscribers.erase(session.id);
       if (meta.subscribers.empty() && meta.is_ephemeral) {
+        meta.file_exists = false;
         std::filesystem::path path{key};
         std::filesystem::path parent_path = path.parent_path();
         auto& [parent_meta, parent_content] = ds_->at(parent_path);
