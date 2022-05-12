@@ -81,6 +81,9 @@ target_link_libraries(demo2 clientlib)
 add_executable(demo3 demo/demo3.cpp)
 target_link_libraries(demo3 clientlib)
 
+add_executable(perf_client perf/perf_client.cpp)
+target_link_libraries(perf_client clientlib)
+
 add_executable(codegen codegen.cpp)
 target_link_libraries(codegen libprotobuf)
 target_include_directories(codegen PUBLIC ${grpc_SOURCE_DIR}/third_party/protobuf/src)

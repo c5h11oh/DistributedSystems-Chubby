@@ -1,4 +1,6 @@
 #include <condition_variable>
+#include <cstring>
+#include <iostream>
 #include <latch>
 #include <mutex>
 #include <random>
@@ -77,11 +79,8 @@ int main(int argc, char** argv) {
   std::mutex m;
   std::condition_variable cv;
   int clientdirfh = sc.OpenDir(clientdir, [&](int fh) {
-    std::cout << "callback" << std::endl;
     std::lock_guard<std::mutex> lg(m);
     finished_node_cnt = file_count(sc.GetContent(fh));
-    std::cout << "callback: finished_node_cnt = " << finished_node_cnt
-              << std::endl;
     if (finished_node_cnt == node_cnt) {
       cv.notify_one();
     }
@@ -92,11 +91,8 @@ int main(int argc, char** argv) {
     finished_node_cnt = file_count(sc.GetContent(clientdirfh));
     while (finished_node_cnt != node_cnt) {
       cv.wait_for(ul, 1s);
-      std::cout << "in while: finished_node_cnt=" << finished_node_cnt
-                << std::endl;
     }
   }
-  std::cout << "outside: finished_node_cnt=" << finished_node_cnt << std::endl;
   all_node_ready.count_down();
 
   for (auto& t : vt) t.join();
