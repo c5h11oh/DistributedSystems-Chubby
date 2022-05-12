@@ -105,7 +105,8 @@ void gen_code(const std::string& action_name,
   printf("%s(nuraft::buffer &data) {\n", action_name.c_str());
   puts("nuraft::buffer_serializer bs(data);");
   if (is_action) {
-    puts("assert(bs.get_i8() == static_cast<int8_t>(action_name));");
+    puts("auto action_num = bs.get_i8();");
+    puts("assert(action_num == static_cast<int8_t>(action_name));");
   }
   for (auto& f : fields)
     printf("%s = bs.get_%s();\n", f->name.c_str(), f->nuname.c_str());
