@@ -1,0 +1,48 @@
+- Most interesting files are located in the root folder
+    - clientlib.cpp / clientlib.h
+        - The main client library code, translate library API call to GRPC call.
+        - It also periodically send and receive keepalive call, which includes the handling of the following circumstances
+            - Detecting primary server status
+            - Invalidating cache
+            - Calling an event callback
+    - server.cpp
+        - The server starting point, setup raft, grpc and store the root directory (/) in the file datastore
+    - SkinnyImpl.cpp
+        - class SkinnyImpl: handle most RPCs
+            - Some blocking functionalities are implemented here. e.g. waiting for clients to ack cache invalidation request (notify_events()) and blocking until a lock can be acquire()
+            - Most rpc handlers in this class called append_entries which invoke the underlying raft library
+        - class SkinnyCbImpl: handle client keep alive calls
+            - send the newest keepalive request to the session's KAThread (Keepalive thread, described in the next session)
+    - Session.cpp
+        - Implement the session database
+        - The most interesting part is the KAThread class, which is a per-session thread that handles client timeout and responding to clients' keepalive requests (which sometimes contains message to invalidate client cache or deliver events)
+    - StateMachine.cpp
+        - The statemachine implemented for the Raft protocol to work
+        - Most operation logic is implemented here
+    - codegen.cpp
+        - Since the under lying raft library takes only byte arrays as arguments, we need to build mechanism that can deserialize from bytes and serialize to bytes.
+        - This file parses protos/raft.proto and generate code accordingly, similar to `protoc`.
+    - pyclientlib.cpp
+        - bind the client library to Python
+
+- proto files in /protos define our RPC calls
+    - skinny.proto define all client to server calls
+    - raft.proto define server to server actions and return
+        - note that this file is not parsed by `protoc` but is instead parsed by custom code generator mentioned in the previous section
+    - diagnostic.proto define rpcs that are only used for testing purpose
+
+- The automatic testing scripts are in the /test folder
+    - conftest.py
+        - contains some small helper script to send binary to all nodes and start/kill them accordingly
+    - file name with test_*_.py 
+        - contains the real test, detail about specific tests can be found in the py file it self
+
+- Performance testing code is located in the /perf folder
+
+- Example client code can be found in the /demo folder  
+    - demo1.py 
+        - a simplified interactive client  
+    - demo2.cpp 
+        - a client that will be notified if the same client is started/killed on another machine (membership detection)
+    - demo3.cpp
+        - an example primary election client

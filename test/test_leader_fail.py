@@ -3,6 +3,10 @@ from conftest import Cluster
 
 
 async def test_leader_dead(cluster: Cluster):
+    """
+    Test that the client can still read the previously written
+    data after a leader has crashed
+    """
     a = SkinnyClient()
     fh = a.Open("/test")
     test_str = b"Hello World!"

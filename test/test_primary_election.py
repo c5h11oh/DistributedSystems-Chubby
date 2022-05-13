@@ -18,8 +18,9 @@ whoiselected = [-1] * NUM_PROC
 
 
 def f(proc_no):
-    
+
     skinny = SkinnyClient()
+
     def callback(fh):
         leader = int(skinny.GetContent(fh))
         logging.info(f"{proc_no:2d}: leader is {leader}!")
@@ -37,6 +38,9 @@ def f(proc_no):
 
 
 async def test_primary_election(cluster: Cluster):
+    """
+    Primary election
+    """
     proc = []
     for proc_no in range(NUM_PROC):
         proc.append(Thread(target=f, args=[proc_no]))

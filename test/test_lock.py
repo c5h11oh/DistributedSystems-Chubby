@@ -6,7 +6,11 @@ from skinny_client import SkinnyClient
 from conftest import Cluster
 import threading
 
+
 async def test_lock_release(cluster: Cluster):
+    """
+    Test simple lock acquire/release operations
+    """
     a = SkinnyClient()
     b = SkinnyClient()
     afh = a.Open("/test")
@@ -15,7 +19,13 @@ async def test_lock_release(cluster: Cluster):
     a.Release(bfh)
     b.Acquire(afh, True)
 
+
 async def test_concurrent_lock_release(cluster: Cluster):
+    """
+    Test a scenario where a client acquire a lock and
+    release it will 1000 other clients tryacquire the
+    same lock.
+    """
     a = SkinnyClient()
     fh = a.Open("/test")
     assert a.TryAcquire(fh, True) == True
@@ -24,6 +34,7 @@ async def test_concurrent_lock_release(cluster: Cluster):
     barrier = threading.Barrier(NUM_THREADS + 1)
     barrier2 = threading.Barrier(NUM_THREADS)
     get_lock_counter = 0
+
     def try_acquire():
         nonlocal get_lock_counter
         a = SkinnyClient()

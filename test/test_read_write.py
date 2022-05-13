@@ -7,6 +7,9 @@ import threading
 
 
 def test_many_writes(cluster):
+    """
+    Test simple read write
+    """
     a = SkinnyClient()
     fh = a.Open("/test")
     for _ in range(2):
@@ -21,6 +24,9 @@ def test_many_writes(cluster):
 
 
 async def test_concurrent_read(cluster):
+    """
+    Test reading from 1000 clients concurrently
+    """
     a = SkinnyClient()
     fh = a.Open("/test")
     a.SetContent(fh, "abc")

@@ -5,6 +5,9 @@ import time
 
 
 async def test_event_file(cluster: Cluster):
+    """
+    Test that events for a normal file can be delivered
+    """
     a = SkinnyClient()
     counter = defaultdict(int)
 
@@ -20,6 +23,9 @@ async def test_event_file(cluster: Cluster):
 
 
 async def test_event_dir(cluster: Cluster):
+    """
+    Test that events for a directory can be delivered
+    """
     a = SkinnyClient()
     counter = defaultdict(int)
 
