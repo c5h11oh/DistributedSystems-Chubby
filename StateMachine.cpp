@@ -16,7 +16,7 @@
 #include "libnuraft/buffer.hxx"
 #include "libnuraft/nuraft.hxx"
 #include "libnuraft/state_machine.hxx"
-#include "srv_config.h"
+#include "utils.h"
 
 namespace StateMachine {
 using namespace nuraft;

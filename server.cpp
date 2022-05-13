@@ -24,7 +24,7 @@
 #include "libnuraft/srv_config.hxx"
 #include "logger_wrapper.hxx"
 #include "raft_server.hxx"
-#include "srv_config.h"
+#include "utils.h"
 
 class DiagnosticImpl final : public diagnostic::Diagnostic::Service {
  public:

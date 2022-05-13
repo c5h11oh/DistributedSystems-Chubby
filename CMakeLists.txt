@@ -72,9 +72,6 @@ target_link_libraries(pyclientlib PUBLIC grpc++)
 add_library(clientlib SHARED clientlib.cpp ${PROTOBUF_DST})
 target_link_libraries(clientlib grpc++)
 
-add_executable(client client.cpp)
-target_link_libraries(client clientlib)
-
 add_executable(demo2 demo/demo2.cpp)
 target_link_libraries(demo2 clientlib)
 

@@ -23,7 +23,7 @@
 #include "buffer_serializer.hxx"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
-#include "srv_config.h"
+#include "utils.h"
 
 using grpc::ServerContext;
 using grpc::ServerUnaryReactor;

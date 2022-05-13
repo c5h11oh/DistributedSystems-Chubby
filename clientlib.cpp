@@ -29,7 +29,7 @@
 #include "includes/diagnostic.pb.h"
 #include "includes/skinny.grpc.pb.h"
 #include "includes/skinny.pb.h"
-#include "srv_config.h"
+#include "utils.h"
 using grpc::ClientContext;
 
 class SkinnyClient::impl {
